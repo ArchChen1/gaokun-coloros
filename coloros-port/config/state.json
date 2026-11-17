@@ -1,0 +1,23 @@
+{
+  "phase": 0,
+  "status": "waiting-for-real-inputs",
+  "target_device": "gaokun3",
+  "baseline": "vahiru/gaokun-android Android 16 / crDroid 17.0",
+  "implemented": [
+    "OTA zip and payload manifest inspection",
+    "full-write payload extraction",
+    "sparse and liblp image inspection",
+    "super repacking with vendor preservation",
+    "donor preflight",
+    "OPPO dependency scanner",
+    "ADB boot diagnostics",
+    "partition backup and guarded super flash"
+  ],
+  "tests": "8 unit tests + synthetic pipeline smoke",
+  "required_inputs": {
+    "donor_ota": "ColorOS tablet OTA zip",
+    "gaokun_super": "complete 12 GiB gaokun3 super image",
+    "device_access": "Linux live USB with root"
+  },
+  "next_gate": "inspect donor, capture baseline super, build first diagnostic image"
+}

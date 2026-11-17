@@ -1,0 +1,41 @@
+# Local reference repositories and experiments
+/analysis/
+
+# Private / large inputs and generated artifacts
+/coloros-port/inputs/*
+!/coloros-port/inputs/.gitignore
+/coloros-port/out/*
+!/coloros-port/out/.gitignore
+/coloros-port/work/*
+!/coloros-port/work/.gitignore
+/coloros-port/reports/*
+!/coloros-port/reports/.gitignore
+/coloros-port/debug/
+
+# Never commit ROMs, firmware, partition images or compressed packages
+*.img
+*.zst
+*.zip
+*.7z
+*.apk
+*.apex
+*.capex
+*.bin
+*.mbn
+*.elf
+
+# Local scratch output
+/$null
+/coloros-port/$null
+/coloros-port/inspect_*.py
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor/OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

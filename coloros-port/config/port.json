@@ -1,0 +1,54 @@
+{
+  "target": {
+    "device": "gaokun3",
+    "soc": "sc8280xp",
+    "android_api": 37,
+    "android_release": 17,
+    "fcm_level": "202504",
+    "super_bytes": 12884901888,
+    "logical_partitions": [
+      "system",
+      "system_ext",
+      "product",
+      "vendor"
+    ],
+    "slot_count": 2,
+    "metadata_slots": 3,
+    "metadata_max_bytes": 65536,
+    "block_bytes": 4096
+  },
+  "donor": {
+    "required_android_release": 17,
+    "preferred_family": [
+      "OPD2413",
+      "OPD2515"
+    ],
+    "required_partitions": [
+      "system",
+      "system_ext",
+      "product",
+      "my_product",
+      "my_manifest"
+    ],
+    "preferred_partitions": [
+      "my_stock",
+      "my_region",
+      "my_heytap",
+      "my_bigball",
+      "my_carrier",
+      "my_engineering"
+    ],
+    "forbidden_markers": [
+      "MTK",
+      "MediaTek"
+    ],
+    "notes": "Use a ColorOS tablet OTA from a Snapdragon device. The donor is not included in this repository."
+  },
+  "baseline": {
+    "kernel_repo": "https://github.com/vahiru/gaokun-android",
+    "kernel_branch": "main",
+    "android_release": 17,
+    "expected_device_prop": "gaokun3",
+    "expected_sdk": "37"
+  }
+}
