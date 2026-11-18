@@ -135,3 +135,90 @@ super.img.zst   9,383,360,842 B sha256 7ef3bfce682a024e18cb869bf030c0c9e9446a808
 - ODM 下多个 OPlus 服务启动即退出（`status 1`）：`displaypanelfeature-service`、
   `vendor.camera-provider-gaokun3`、`oplus.performance.hal` 等，需逐个查缺失依赖。
 - UCSI 每 0.2 s 刷屏（`ucsi connector is not initialized yet`），是噪音但会挤占内核日志。
+---
+
+# v5b：修复 `mkfs.erofs --all-root` 导致的 logd 崩溃
+
+## 现象
+
+v5 刷入后实机：
+
+- `permissive` 生效后 `/metadata/gk3-debug/` 能创建，
+  `kmsg.log` 530,536 B 有内容，但 `logcat.txt` **0 字节**。
+- `snapshot.txt` 显示 `surfaceflinger`、`vendor.hwcomposer-3`、`zygote` 都是 `running`。
+- `kmsg.log` 里每 5 秒一条：
+
+```
+init: cannot execv('/system/bin/logd'). See the 'Debugging init' section of init's README.md for tips: Permission denied
+init: Service 'logd' (pid 1765) exited with status 127
+init: process with updatable components 'logd' exited 4 times before boot completed
+```
+
+对照 v3（只改 vendor、system 未重打包）的采集：logd 正常，
+`logcat.txt` 3,271,680 B，大量 `logd: logdr: UID=0 GID=0 PID=...` 正常服务记录。
+→ **这是 v5 独有的回归，不是移植本身的移植性问题。**
+
+## 根因
+
+`v5_build_system_erofs.sh` 重打包 system 时用了：
+
+```
+mkfs.erofs ... --all-root ...
+```
+
+`--all-root` 把镜像内 **所有文件属主强制改成 root:root**，破坏了原始 uid/gid 模型。
+对比同一路径：
+
+| 文件 | 原始 ColorOS system.img | v5 出厂 system_a.img |
+|---|---|---|
+| `/system/bin/logd` | `uid=1036 gid=1036 mode=0550` | `uid=0 gid=0 mode=0550` |
+| `/system/bin/surfaceflinger` | `uid=0 gid=2000 mode=0755` | `uid=0 gid=0 mode=0755` |
+| `/system/bin/init` | `uid=0 gid=2000 mode=0755` | `uid=0 gid=0 mode=0755` |
+
+Android init 启动这类服务是 **fork → setuid(1036) → execve**。
+原本 `0550 logd:logd` 时，uid 1036 是属主，可读可执行；
+`--all-root` 后变成 `0550 root:root`，uid 1036 既非属主、gid 1036 也不在组 0，
+other 位 `---` → `EACCES`，init 报 "Permission denied"，服务以 127 退出。
+
+`logd` 挂掉 → `/dev/socket/logd*` 无人服务 → `logcat` 写不进文件 → `logcat.txt` 为 0 字节。
+其它以非 root uid 启动的服务（`pogokey_board`、`vendor.touch-aidl-1` 等）同样受影响。
+
+## 修复
+
+重打包时**去掉 `--all-root`**，以 root 身份执行 `mkfs.erofs` 并保留源树属主。
+构建树由 `rsync -aHAX --numeric-ids` 从原镜像解出，属主本来就是正确的，
+所以只需换打包命令，不需要重新解包。
+
+已在 `v5_build_system_erofs.sh` 中：
+
+1. 删除 `--all-root`；
+2. 增加前置守卫：若 `bin/logd` 属主为 0 直接 `FATAL` 退出，防止回归。
+
+## 验证
+
+重新打包后对出厂 `system_a` 直接 `dump.erofs`：
+
+```
+/system/bin/logd            Uid: 1036   Gid: 1036  Access: 0550
+/system/bin/surfaceflinger  Uid: 0      Gid: 2000  Access: 0755
+/system/bin/init            Uid: 0      Gid: 2000  Access: 0755
+```
+
+- `system_a` 与新建 EROFS sha256 一致（`098f060a...`）
+- `vendor_a` 未变（`46046211...`）
+- 其余 11 个分区与原 v5 逐字节一致
+- `libEGL.so` / `libGLESv2_angle.so` / `libvulkan.so` 仍是 crDroid 版
+- `strings libEGL.so | grep kgsl-3d0` = **0**（无 KGSL 依赖）
+- `fsck.erofs` 通过，分区组余量 1405.9 MiB
+
+## v5b 产物
+
+```
+boot.img        32,069,632 B   sha256 ec30855ece57548950851ccccfb695f169369a2e3d2e2cacca1ebdcda588193b
+super.img.zst   9,383,360,844 B sha256 c51231c0faaa80a2ff4c0ef537d098d4c06595ab5dccb1f6ddb71628202a5596
+```
+
+- system_a sha256 `098f060adf9a22c67c2374ca7d943445d1128ca85c015ba4372085e88e8956bd`
+- 与 v5 相比：**仅 system_a 的 inode 属主修复**，boot/vendor 及其它分区不变
+- 压缩使用 `zstd -T0 -12`，**不加 `--long=31`**（上次 `bad-magic` 校验失败即由它引起）
+- `zstd -t` 与 `sha256sum -c` 均通过

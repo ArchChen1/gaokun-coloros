@@ -9,6 +9,18 @@ echo "########## original UUID / features ##########"
 dump.erofs -s /mnt/d/gaokun-build-temp/system.img 2>&1 | grep -E 'UUID|features|blocks'
 echo
 
+# Guard: helper daemons (logd, surfaceflinger, ...) are started via setuid, so
+# ownership is part of their access control. `mkfs.erofs --all-root` silently
+# breaks them: logd (0550, uid/gid 1036) loses execute permission and init
+# reports `cannot execv('/system/bin/logd')` every 5s (exit 127).
+for f in bin/logd bin/surfaceflinger bin/init; do
+  stat -c '  %n mode=%a uid=%u gid=%g' "$TREE/system/$f"
+done
+if [ "$(stat -c %u "$TREE/system/bin/logd")" = "0" ]; then
+  echo "FATAL: logd is uid 0; system tree ownership was lost" >&2
+  exit 1
+fi
+echo
 echo "########## build erofs (lz4, 4096 block, keep UUID) ##########"
 time mkfs.erofs \
   -zlz4 \
@@ -17,7 +29,6 @@ time mkfs.erofs \
   -U 8e526587-69d7-562d-a908-a83699912a48 \
   -L system \
   -T 1793807531 \
-  --all-root \
   "$OUT" "$TREE" 2>&1 | tail -20
 
 echo
