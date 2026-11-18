@@ -9,8 +9,8 @@ MateBook E Go (gaokun3 / SC8280XP), based on the hardware bring-up from
 - ColorOS 17 / Android 17 donor inspection is complete.
 - Full OTA payload extraction, sparse conversion and liblp `super` assembly
   are implemented.
-- A first verified `super` release candidate was built locally.
-- The candidate has not yet been flashed or boot-tested.
+- `release-coloros-v5` is the current candidate (crDroid graphics stack swapped into ColorOS `system`).
+- v5 has not yet been boot-tested on the E Go; see `coloros-port/docs/BRINGUP-v5.md` for the bring-up log.
 - The official gaokun installer requires uninstalling an existing Android
   installation before reinstalling, so the install procedure is documented
   explicitly.
@@ -19,6 +19,7 @@ MateBook E Go (gaokun3 / SC8280XP), based on the hardware bring-up from
 
 - `coloros-port/` - scripts, tests, configuration and documentation.
 - `coloros-port/docs/INSTALL-WHEN-ANDROID-EXISTS.md` - official installer flow.
+- `coloros-port/docs/SELINUX-MERGE.md` - current policy merge method and hashes.
 - `coloros-port/docs/DEVICE-TEST-CHECKLIST.md` - post-boot acceptance checks.
 - `coloros-port/docs/PATCHING.md` - ColorOS binary and framework patch policy.
 
@@ -30,11 +31,11 @@ contains tooling and documentation only.
 
 ## Tests
 
-```powershell
+~~~powershell
 cd coloros-port
 python -m unittest discover -s tests -v
 python tests/smoke_pipeline.py
-```
+~~~
 
 ## Status
 

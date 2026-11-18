@@ -1,0 +1,20 @@
+#!/bin/bash
+set -euo pipefail
+P=/home/cenmin/coloros-build/policy-src
+O=/home/cenmin/policywork
+SECILC=/home/cenmin/toolchain/secilc/secilc
+CHECKPOLICY=/home/cenmin/toolchain/checkpolicy/checkpolicy
+OUT="$O/precompiled_sepolicy.final"
+LD_LIBRARY_PATH=/lib "$SECILC" -N -m -M true -G -c 35 -f /dev/null -o "$OUT" \
+  "$P/system/plat_sepolicy.cil" \
+  "$P/system/mapping/202604.cil" \
+  "$P/system_ext/system_ext_sepolicy.cil" \
+  "$P/system_ext/mapping/202604.cil" \
+  "$P/product/product_sepolicy.cil" \
+  "$P/product/mapping/202604.cil" \
+  "$P/gaokun_vendor/plat_pub_versioned.cil" \
+  "$P/gaokun_vendor/vendor_sepolicy.cil" \
+  "$P/system/plat_sepolicy_genfs_202604.cil"
+LD_LIBRARY_PATH=/lib "$CHECKPOLICY" -b -M -C -o "$O/precompiled_sepolicy.final.cil" "$OUT"
+sha256sum "$OUT"
+stat -c '%s %n' "$OUT"

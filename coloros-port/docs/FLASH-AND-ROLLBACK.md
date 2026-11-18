@@ -1,5 +1,17 @@
 # Flash and rollback
 
+## Current release
+
+~~~text
+release directory: coloros-port/out/release-coloros-b
+boot.img SHA-256:  ec30855ece57548950851ccccfb695f169369a2e3d2e2cacca1ebdcda588193b
+super.img.zst SHA-256: 26e45d05167e38423ea4c1c0d32d738e334e6cdf55ff081dbe6ef7cb65dfe2dd
+raw super SHA-256: 5a71320b4796775480894db8f506e3aaa6e5060c7947fd054b3ffe0fd322ac01
+~~~
+
+The current package is the ColorOS ODM policy merge candidate. It still needs
+a device boot test; do not treat it as a daily-driver release.
+
 ## Before the first write
 
 1. Boot a Linux live USB.
