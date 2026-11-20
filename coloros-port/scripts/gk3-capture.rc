@@ -1,0 +1,9 @@
+service gk3-capture /vendor/bin/gk3-capture.sh
+    class main
+    user root
+    group root system
+    oneshot
+    disabled
+
+on post-fs-data
+    exec_start gk3-capture
