@@ -5,6 +5,7 @@ BASE=/home/cenmin/v5/parts/my_product_a.img
 OUTDIR=/home/cenmin/coloros-build/v39
 OUT="$OUTDIR/my_product_a_v39.img"
 TREE=$(mktemp -d /home/cenmin/v39-myproduct-tree.XXXXXX)
+trap 'rm -rf -- "$TREE"' EXIT
 CHECK=/mnt/v39-myprod-check
 SRC_MNT=/mnt/v39-myprod-src
 MKFS=/home/cenmin/toolchain/erofs-install/bin/mkfs.erofs
