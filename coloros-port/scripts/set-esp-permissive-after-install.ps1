@@ -43,10 +43,10 @@ try {
     if ($DryRun) {
       Write-Host "DRY RUN $($e.FullName)" -ForegroundColor Yellow
     } else {
-      $backup = $e.FullName + '.before-permissive-v38r2'
-      if (-not (Test-Path -LiteralPath $backup)) {
-        Copy-Item -LiteralPath $e.FullName -Destination $backup -Force
-      }
+      $backup = $e.FullName + '.before-permissive'
+      if (Test-Path -LiteralPath $backup) { $backup = $e.FullName + '.before-permissive-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
+      Copy-Item -LiteralPath $e.FullName -Destination $backup -Force
+
       [IO.File]::WriteAllText($e.FullName, $new, [Text.UTF8Encoding]::new($false))
       $check = [IO.File]::ReadAllText($e.FullName)
       if ($check -notmatch 'androidboot\.selinux=permissive') { throw "post-write selinux verify failed: $($e.FullName)" }
