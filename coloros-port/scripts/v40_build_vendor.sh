@@ -16,10 +16,11 @@ debugfs -R "dump /etc/init/hw/init.gaokun3.rc $TMP/init.gaokun3.rc" "$OUT" >/dev
 cat >> "$TMP/init.gaokun3.rc" <<'EOF'
 
 # gaokun3 v40: post-boot snapshots. bootanim=stopped is the point where the
-# UI reaches 100%; capture 10/30/60 seconds later to catch the black-screen
+# UI reaches 100%; capture 3/10/30/60 seconds later to catch the black-screen
 # reboot. These are one-shot exec_background probes, not services.
 on property:init.svc.bootanim=stopped
     write /metadata/gk3-v40-bootanim-trigger 1
+    exec_background - root root -- /system/bin/sh /vendor/bin/v40_dump.sh postboot-3
     exec_background - root root -- /system/bin/sh /vendor/bin/v40_dump.sh postboot-10
     exec_background - root root -- /system/bin/sh /vendor/bin/v40_dump.sh postboot-30
     exec_background - root root -- /system/bin/sh /vendor/bin/v40_dump.sh postboot-60

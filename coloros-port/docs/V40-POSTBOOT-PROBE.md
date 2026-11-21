@@ -47,7 +47,7 @@ SystemService.PHASE_BOOT_COMPLETED
 
 - 保留 v39 的 Smart Antenna feature 删除；
 - 保留 v38r3 早期 zygote 探针；
-- 在 `init.svc.bootanim=stopped` 后增加 10/30/60 秒快照；
+- 在 `init.svc.bootanim=stopped` 后增加 3/10/30/60 秒快照；
 - 不新增常驻 service；
 - 不新增轮询；
 - 不修改 system、my_product、ODM、boot。
@@ -81,7 +81,7 @@ system-v38.erofs
 3813a078c8556a46ebd988b2265cd2a32553b7e174c76090f4d1389854624c63
 
 vendor_a_v40.img
-91b6b473b9fa09b7c4796e896e956bef2560366176a059129c6a02c7c1111ac2
+bec67d91d9878bf2d2e2e11bb38bc46b5a811d44890745e49d9983ed365c9bd1
 
 odm_v38.img
 8ce0d5722ae76a30a6673581581199a535ae7af9227a2482d24dcc604ae7b00b
@@ -90,10 +90,10 @@ my_product_a_v39.img
 69dbe55ee04628ab4302b6054574deeda8b6305da02b965f271fe393b3a6e0b3
 
 super-coloros-v40.simg
-6beb076dd1a794d11d903d74700588fa65184dd900cc0b0aadb75397d375bb03
+b3cba32bcd8e6d3822aba1057842f9b673e875b6161d235dbcbd9c0cd7c32599
 
 release super.img.zst
-943b83639d46f033f350766f7630dc55d1f6d055619463e52ef9859deb3d95ef
+fb1f236853c499eaba23d205c2d4ead36e45606a6db7ceb4f53db505ed51d184
 
 boot.img
 ec30855ece57548950851ccccfb695f169369a2e3d2e2cacca1ebdcda588193b

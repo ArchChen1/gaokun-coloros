@@ -3,9 +3,15 @@
 mode="${1:-postboot-10}"
 base=/metadata/gk3-v40
 mkdir -p "$base" 2>/dev/null || exit 1
+if [ ! -e "$base/cleaned-old" ]; then
+  rm -rf /metadata/gk3-v38r3 2>/dev/null || true
+  rm -f /metadata/gk3-v38r3-* 2>/dev/null || true
+  : > "$base/cleaned-old" 2>/dev/null || true
+fi
 [ -e "$base/$mode.done" ] && exit 0
 
 case "$mode" in
+  postboot-3) delay=3 ;;
   postboot-10) delay=10 ;;
   postboot-30) delay=30 ;;
   postboot-60) delay=60 ;;
