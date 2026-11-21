@@ -1,0 +1,10 @@
+; gaokun3 v38: HyperOS-proven ashmem/property access for audioserver and base apps.
+(allow system_server ashmem_libcutils_device (chr_file (open)))
+(allow hal_audio_default ashmem_libcutils_device (chr_file (open)))
+(allow audioserver ashmem_libcutils_device (chr_file (open read write getattr map ioctl)))
+(allow audioserver ashmem_device (chr_file (open read write getattr map ioctl)))
+(allow audioserver bootanim_system_prop (file (read getattr map)))
+(allow audioserver vendor_default_prop (file (read getattr map open)))
+(allow untrusted_app ashmem_libcutils_device (chr_file (open read write getattr map ioctl)))
+(allow untrusted_app qemu_hw_prop (file (read getattr open map)))
+(allow untrusted_app proc_version (file (read getattr open map)))

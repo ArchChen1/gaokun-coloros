@@ -9,3 +9,4 @@
 *.txt text eol=lf
 *.gitignore text eol=lf
 *.ps1 text eol=crlf
+*.cil text eol=lf
