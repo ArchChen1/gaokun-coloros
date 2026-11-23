@@ -1,0 +1,10 @@
+# 脚本必须保持 LF，否则在 WSL/bash 里会因 CRLF 报 "bad interpreter"
+*.sh text eol=lf
+*.py text eol=lf
+*.patch text eol=lf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.img binary
+*.zst binary
