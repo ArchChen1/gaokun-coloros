@@ -1,0 +1,37 @@
+From cc627217daed38bde3665efec355ab27324dc8fd Mon Sep 17 00:00:00 2001
+From: ego <ego@local>
+Date: Mon, 23 Nov 2026 20:57:54 +0800
+Subject: [PATCH 2/2] =?UTF-8?q?EGO:=20ESP=20=E5=90=AF=E5=8A=A8=E9=A1=B9?=
+ =?UTF-8?q?=E6=A0=87=E9=A2=98=E6=94=B9=E4=B8=BA=20ColorOS=2017.0.1=20(EGO)?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ installer/backend/src/esp.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/installer/backend/src/esp.c b/installer/backend/src/esp.c
+index 340f734..682ad74 100644
+--- a/installer/backend/src/esp.c
++++ b/installer/backend/src/esp.c
+@@ -242,14 +242,14 @@ int gk3w_is_machine_id(const char *s)
+ 
+ /* 文件名与各行都是承重的：boot_control HAL 按 *-android-a.conf / *-android-b.conf 改写 loader.conf 的 default
+  * （EspSlot.cpp:41-43）；OTA postinstall 只改 options 那一行、只往 slot_<后缀>/ 写这三个文件名。
+- * ⚠️ 标题里的 "crDroid 16.0" 是写死的，换大版本时要改。 */
++ * ⚠️ 标题里的产品名是写死的，EGO 分支改成了 ColorOS 17（ColorOS 移植），换大版本时要改。 */
+ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline)
+ {
+     int n;
+     if ((slot != 'a' && slot != 'b') || !gk3w_is_machine_id(mid))
+         return -1;
+     n = snprintf(out, cap,
+-                 "title      crDroid 16.0 (gaokun3) \xe2\x80\x94 slot _%c\n"
++                 "title      ColorOS 17.0.1 (EGO) \xe2\x80\x94 slot _%c\n"
+                  "version    gaokun3-slot-%c\n"
+                  "sort-key   zandroid%c\n"
+                  "options    %s androidboot.slot_suffix=_%c\n"
+-- 
+2.54.0.windows.1
+

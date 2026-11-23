@@ -1,0 +1,78 @@
+{
+  "generated": "2026-11-24T06:18:54",
+  "assertions": "scripts/current_verify.sh 全绿",
+  "invariants": {
+    "vendor_vulkan_freedreno_sha256": "7619b1286b7d0b2d697e0c48b6a471ab7f439eee0523ce1820fee6ba612b1d90",
+    "vendor_hwui_renderer": "skiavk",
+    "system_density_trigger": "on property:persist.sys.display.density=480 -> 320",
+    "ath11k_firmware_in_system": true,
+    "odm_libjsoncpp": true
+  },
+  "parts": {
+    "system": {
+      "path": "/home/cenmin/coloros-build/current/parts/system.erofs",
+      "bytes": 1137397760,
+      "sha256": "f8770b1c6af9fcbd516c1352cfba1f5a40ebb9633d3e8392428c88d2eee15425"
+    },
+    "system_ext": {
+      "path": "/home/cenmin/coloros-build/v49/src/system_ext_a.img",
+      "bytes": 986378240,
+      "sha256": "6f2e5102c5b0d3f3ceb34766a0b7aef60d9e0ae2b22d04885de1d114e6a6cbaa"
+    },
+    "product": {
+      "path": "/home/cenmin/coloros-build/v49/src/product_a.img",
+      "bytes": 167698432,
+      "sha256": "6750e8e32c064b8d396a24953c38ed54bef1568cd8dcd269973d91dbf8752001"
+    },
+    "vendor": {
+      "path": "/home/cenmin/coloros-build/current/parts/vendor.img",
+      "bytes": 536870912,
+      "sha256": "5a5853c516b507b1587552a57c1ca460181bdcef7b590af135cf9ade6e652e82"
+    },
+    "odm": {
+      "path": "/home/cenmin/coloros-build/current/parts/odm.erofs",
+      "bytes": 2131279872,
+      "sha256": "5f014b79a4e68ee9521dee46874dff30e282b9a39522bf7f9e8da3971e44b11e"
+    },
+    "my_product": {
+      "path": "/home/cenmin/coloros-build/v52/my_product_a_v52b.erofs",
+      "bytes": 1063944192,
+      "sha256": "cd445c26732537343bad1685d109e11c3b2fc839d8c04898edadb05ed1e4dbdb"
+    },
+    "my_stock": {
+      "path": "/home/cenmin/coloros-build/v52/my_stock_a_v52.erofs",
+      "bytes": 4026658816,
+      "sha256": "17a19bda72fe5d3aafee10623af688c8464c1425999c6cf42c8fc902b6d3561d"
+    },
+    "my_manifest": {
+      "path": "/home/cenmin/coloros-build/v49/src/my_manifest_a.img",
+      "bytes": 716800,
+      "sha256": "eb2c3ebdf42a36ab06ba9c52ce050f52ea13c5fbe73a9cddf429ceba9632c9d4"
+    },
+    "my_region": {
+      "path": "/home/cenmin/coloros-build/v49/src/my_region_a.img",
+      "bytes": 7237632,
+      "sha256": "5783ff83d3640b649223aa377187153eb39bdbeb0f2dfab0dc3fbe50e36f7f02"
+    },
+    "my_engineering": {
+      "path": "/home/cenmin/coloros-build/v49/src/my_engineering_a.img",
+      "bytes": 335872,
+      "sha256": "f38ccd367fb88bf6c123a025a7dbbe7174b95227f242fc5c925121ee1e6179ab"
+    },
+    "my_heytap": {
+      "path": "/home/cenmin/coloros-build/v49/src/my_heytap_a.img",
+      "bytes": 335872,
+      "sha256": "083e1ebbbdb9866bd562a7f3b44e439d91c340231f32bc2f13e1308ff8e4ef2d"
+    },
+    "my_carrier": {
+      "path": "/home/cenmin/coloros-build/v49/src/my_carrier_a.img",
+      "bytes": 335872,
+      "sha256": "61171f0c977eafc02388757c7454bad67f53b7e617d0ef239480887d958a6b27"
+    },
+    "my_bigball": {
+      "path": "/home/cenmin/coloros-build/v49/src/my_bigball_a.img",
+      "bytes": 335872,
+      "sha256": "d5fc02100b528046eaf468f6b605a560f909be8a7c14a44a2c6301ad7413869f"
+    }
+  }
+}

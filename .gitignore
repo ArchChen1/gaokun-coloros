@@ -1,0 +1,20 @@
+# 构建产物与抓包不入库
+releases/
+work/*
+!work/manifest.json
+
+# 镜像与压缩包
+*.img
+*.zst
+*.erofs
+*.zip
+
+# 日志
+*.log
+build/legacy/*.log
+
+# 编辑器/系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

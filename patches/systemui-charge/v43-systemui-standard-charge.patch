@@ -1,0 +1,91 @@
+--- a/com/android/systemui/common/charge/OplusAddBatteryStatus.smali
++++ b/com/android/systemui/common/charge/OplusAddBatteryStatus.smali
+@@ -557,6 +557,40 @@
+ .method public final refreshChargingDerivedState()V
+     .registers 6
+ 
++    # -1 means the vendor notification flags are unavailable.
++    iget v0, p0, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->notifyCode:I
++
++    const/4 v1, -0x1
++
++    if-ne v0, v1, :donor_notify_flags
++
++    const/4 v2, 0x0
++
++    const/4 v3, 0x1
++
++    iget v0, p0, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->status:I
++
++    const/4 v1, 0x5
++
++    if-ne v0, v1, :gk3_not_full
++
++    move v0, v3
++
++    goto :gk3_set_full
++
++    :gk3_not_full
++    move v0, v2
++
++    :gk3_set_full
++    iput-boolean v0, p0, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->isFull:Z
++
++    invoke-virtual {p0}, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->isRealCharging()Z
++
++    move-result v0
++
++    goto :goto_36
++
++    :donor_notify_flags
+     iget v0, p0, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->status:I
+ 
+     const/4 v1, 0x5
+@@ -890,6 +924,23 @@
+ .method public final updateChargingStateFromUiIntent(Landroid/content/Intent;)V
+     .registers 5
+ 
++    # In the absence of vendor flags, the additional broadcast tracks status
++    # changes that this UI broadcast can miss while the charger stays attached.
++    const-string v0, "notifycode"
++
++    const/4 v1, 0x0
++
++    invoke-virtual {p1, v0, v1}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
++
++    move-result v0
++
++    const/4 v1, -0x1
++
++    if-ne v0, v1, :donor_ui_battery
++
++    return-void
++
++    :donor_ui_battery
+     const-string v0, "chargeplugged"
+ 
+     const/4 v1, 0x0
+@@ -1044,6 +1095,23 @@
+ 
+     invoke-virtual {p0, p2}, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->updateCommonExtras(Landroid/content/Intent;)V
+ 
++    iget v0, p0, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->notifyCode:I
++
++    const/4 v1, -0x1
++
++    if-ne v0, v1, :donor_additional_battery
++
++    const-string v0, "chargeplugged"
++
++    const/4 v1, 0x0
++
++    invoke-virtual {p2, v0, v1}, Landroid/content/Intent;->getIntExtra(Ljava/lang/String;I)I
++
++    move-result v0
++
++    iput v0, p0, Lcom/android/systemui/common/charge/OplusAddBatteryStatus;->plugged:I
++
++    :donor_additional_battery
+     const-string p1, "chargewattage"
+ 
+     const/4 v0, -0x1
