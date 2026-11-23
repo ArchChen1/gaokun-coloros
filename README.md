@@ -22,21 +22,17 @@
 
 ## 快速开始
 
-```powershell
-# 1. 断言当前基座（必须全绿）
-wsl -u root -d Ubuntu-24.04 -- bash /mnt/e/gk3-coloros/build/current_verify.sh
-
-# 2. 固化基座并重打 system / odm（改过树之后跑）
-wsl -u root -d Ubuntu-24.04 -- bash /mnt/e/gk3-coloros/build/current_build.sh
-
-# 3. 出包并发布到 Windows 侧
-wsl -u root -d Ubuntu-24.04 -- bash /mnt/e/gk3-coloros/build/current_pack.sh
+```bash
+sudo make deps            # 装依赖（erofs-utils、e2fsprogs、simg2img、zstd…）
+make fetch                # 抓输入（8 GB 左右，清单见 inputs/manifest.txt）
+make verify               # 基座断言，必须全绿
+make parts VERSION=v54    # 固化基座 + 重打 system/odm，写 manifest.json
+make pack                 # 出 super + 发布到 $GK3_PUBLISH
+# 或者一步：make all VERSION=v54
 ```
 
-产物：`D:\gaokun-coloros-release\latest\`（`super.img`、`super.img.sha256.txt`、`boot.img`、`install-artifacts.sha256`），
-HTTP 上在 `http://192.168.1.152:8001/latest/`。
-
-前置：构建机是 WSL Ubuntu-24.04，基座目录 `/home/cenmin/coloros-build/current/`（分区产物 + `manifest.json` + `logs/`）。
+产物：`$GK3_STATE/release/super-v54.img`（附 `super.img` 软链）与 `$GK3_PUBLISH/super.img` + sha256。
+默认 `GK3_WORKDIR=$HOME/gk3-build`，可用 `~/.config/gk3-coloros/env` 指到已有目录，详见 `docs/BUILD-FROM-SCRATCH.md`。
 
 ## 硬规矩
 
