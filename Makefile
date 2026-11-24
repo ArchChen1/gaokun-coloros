@@ -1,7 +1,8 @@
 # 构建入口。全部在 WSL/Ubuntu 里执行（make 需要 bash + 挂载权限 → 用 root 或带 sudo）。
 #
 #   make deps                 # 安装/检查依赖
-#   make fetch                # 抓取输入（GK3_INPUT_BASE_URL 可覆盖）
+#   make fetch                # 抓取输入（Release inputs-v1 的分片；要 root：解包树恢复 SELinux 标签）
+#                              #   sudo -E make fetch
 #   make verify               # 基座断言
 #   make parts VERSION=v54    # 固化基座 + 重打 system/odm
 #   make pack                 # 出 super + 发布

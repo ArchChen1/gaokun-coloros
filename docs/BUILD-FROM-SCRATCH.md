@@ -16,45 +16,46 @@ sudo make deps
 
 会装 `erofs-utils`、`e2fsprogs`、`attr`、`android-sdk-libsparse-utils`（`simg2img`）、`zstd`、`python3` 等，并检查 `mkfs.erofs ≥ 1.9` 与 `tools/otatools/bin/lpmake`。
 
-## 1. 输入（8 GB 左右，不入库）
+## 1. 输入（托管在 Release `inputs-v1`，9.2 GB 分片 / 落盘 12.8 GB）
+
+不用自己拆 donor 包了。输入是 13 个目标、15 个分片，清单就在仓库里：
 
 ```
-$GK3_WORKDIR/in/
-├── vendor_base.img      基座 vendor（512 MiB ext4，含 turnip/skiavk 前的原始状态？见下）
-├── my_product.erofs     A 槽 my_product
-├── my_stock.erofs       A 槽 my_stock
-└── src/                 system_ext / product / my_manifest / my_region / my_engineering / my_heytap / my_carrier / my_bigball
+inputs/targets.txt   <sha256> <bytes> <target>            完整文件的 sha
+inputs/slices.txt    <sha256> <bytes> <asset> <target>    每个分片的 sha（GitHub 单资产 ≤2 GB）
 ```
-
-清单在 `inputs/manifest.txt`（每行 `sha256 bytes name [url]`）。抓取：
 
 ```bash
-make fetch                                  # 用清单里的 url
-GK3_INPUT_BASE_URL=https://your-host/base make fetch   # 或统一前缀
+sudo -E make fetch     # 下载 → 校验分片 → 拼装 → 校验整体 sha → 解包两棵树
 ```
 
-**注意**：`vendor_base.img` 必须是**已含黑屏修复**的 512 MiB 基座（驱动 sha `7619b128…1d90`、`debug.hwui.renderer=skiavk`），
-不是 donor 的原始 vendor，也不是 1.31 GiB 未缩容版本。`make verify` 会核对这一点。
+`fetch` 幂等：目标已存在且 sha 匹配就跳过。换镜像（内网缓存、自建 HTTP）用 `GK3_INPUT_BASE_URL`：
 
-这些输入是从 donor 提取的中间产物（见 `docs/DONOR.md`），目前未对外托管，需要自己准备：
+```bash
+GK3_INPUT_BASE_URL=https://mirror.example/gk3-inputs sudo -E make fetch
+```
 
-```
-lpunpack super.img out/            # 拆出各分区
-fsck.erofs --xattrs --extract out/system/ out/system_a.img   # 得到解包树
-```
+| 目标 | 大小 | 说明 |
+|---|---|---|
+| `vendor_base.img` | 512 MiB | 已含黑屏修复的基座 vendor（驱动 sha `7619b128…1d90`、`debug.hwui.renderer=skiavk`） |
+| `my_product.erofs` / `my_stock.erofs` | 1.0 / 3.9 GiB | 原样进 super |
+| `src/*_a.img`（8 个） | 共 ~1.1 GiB | `system_ext`、`product`、`my_manifest`、`my_region`、`my_engineering`、`my_heytap`、`my_carrier`、`my_bigball` |
+| `trees/system` | 822 MB（解开 1.6 GB） | 解包后的 system 树，`make parts` 从它重打 `system.erofs` |
+| `trees/odm` | 1.62 GB（解开 3.1 GB） | 解包后的 odm 树，重打 `odm.erofs` |
+
+树用 tar.zst 打包：它们含几万个文件与 SELinux 扩展属性，不适合进 git；打包时固定了 mtime / 属主 / 排序，
+同一棵树重复打包得到同一份 tar。**`fetch` 必须 root**，否则 `security.selinux` 标签写不进去（脚本会拒绝执行）。
 
 ## 2. 解包树
 
-`$GK3_WORKDIR/trees/` 里放两份“改了补丁之后”的树：
+`fetch` 已把两棵树解到 `$GK3_WORKDIR/trees/{system,odm}`，正常流程不用管。只有在要改 system/odm 内容时才动它们，
+`make parts` 会从树重打分区：
 
-```
-trees/system/       # 传给 mkfs.erofs 的根（其下有 system/ 子目录）
-trees/odm/          # odm 树的根
-```
+- `system` 树：`etc/firmware/ath11k/WCN6855/hw2.1/` 四个固件、`etc/init/gaokun3-v43.rc` 的密度触发、
+  `etc/gaokun3-postboot.sh`、`etc/gk3-charge/{SystemUI.apk,empty}`
+- `odm` 树：`lib64/` 里的 `libjsoncpp.so`、`android.hardware.sensors-V3-ndk.so`、`libhidltransport.so`
 
-`system` 树里至少要包含本项目的改动：`etc/firmware/ath11k/WCN6855/hw2.1/` 四个固件、
-`etc/init/gaokun3-v43.rc` 的密度触发、`etc/gaokun3-postboot.sh`、`etc/gk3-charge/{SystemUI.apk,empty}`。
-`odm` 树的 `lib64/` 里要有 `libjsoncpp.so`、`android.hardware.sensors-V3-ndk.so`、`libhidltransport.so`。
+`make verify` 会逐条核对上面每一项。
 
 ## 3. 配置（可选）
 
@@ -92,6 +93,8 @@ make all VERSION=v54       # 等价于 parts + pack
 
 `make pack` 内部会先跑 `make verify`，断言不过直接 `PACK_ABORTED`，不会产出镜像。
 
+CI 里同一条链路由 `.github/workflows/system.yml` 执行：干净运行器上 `fetch` → `build` → `pack`，这就是“拉取就能编译”的验收。
+
 ## 5. 刷机
 
 安装器“卸载 → 安装”会清数据，安装目录需要三件：
@@ -118,3 +121,5 @@ python3 installer/tools/make_release.py --boot boot.img --super super.img
 | `Invalid sparse file format at header magic` | `lpmake -S` 的正常提示，不是错误 |
 | vendor 挂不上、`bad geometry` | 缩容顺序必须 `resize2fs` 先、`truncate` 后 |
 | 断言 `vendor 驱动 sha` 不过 | 基座用错了：必须用打过 turnip/skiavk 的 512 MiB 基座 |
+| `fetch` 报“需要 root” | 解包树要写 SELinux 标签，用 `sudo -E make fetch` |
+| 分片拼装后 sha 不符 | 下载中断，删掉 `$GK3_WORKDIR/.parts` 再跑一次 |

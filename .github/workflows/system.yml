@@ -1,0 +1,79 @@
+name: system
+
+# 系统镜像：在干净的 GitHub 运行器上从 Release 拉输入 → 断言 → 重打 system/odm → 出 super。
+# 这条流水线证明“clone + 装依赖 + 拉输入 = 出包”，不依赖任何本机中间物。
+#
+# 输入托管在 Release `inputs-v1`（分片，见 inputs/slices.txt，由 build/export_inputs.sh 生成）。
+# 运行器磁盘：工作目录放 /mnt（约 65 GB），/ 只有 ~29 GB，放不下 20 GiB super 的中间物。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'build/**'
+      - 'inputs/**'
+      - '.github/workflows/system.yml'
+  pull_request:
+    paths:
+      - 'build/**'
+      - 'inputs/**'
+      - '.github/workflows/system.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GK3_WORKDIR: /mnt/gk3-build
+  GK3_PUBLISH: /mnt/gk3-build/publish
+
+jobs:
+  build:
+    name: 从输入出包
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 磁盘
+        run: df -h / /mnt | sed 's/^/  /'
+
+      - name: 依赖
+        run: sudo bash build/deps.sh
+
+      - name: 拉输入（Release inputs-v1）
+        run: sudo -E bash build/fetch.sh
+
+      - name: 出包
+        run: |
+          sudo -E bash build/current_build.sh "ci-${GITHUB_RUN_NUMBER}"
+          sudo -E bash build/current_pack.sh
+
+      - name: 校验产物
+        run: |
+          set -e
+          s=$GK3_WORKDIR/current/release/super.img
+          ls -l "$(readlink -f "$s")"
+          python3 - "$s" <<'PY'
+import os, struct, sys
+p = os.path.realpath(sys.argv[1])
+with open(p, 'rb') as f:
+    hdr = f.read(28)
+magic, major, minor, fhs, chs, blk, total_blk, total_chunks = struct.unpack('<IHHHHIII', hdr[:24])
+assert magic == 0xED26FF3A, hex(magic)
+print(f"sparse: blk={blk} 分块={total_chunks} 展开={total_blk*blk} 字节 文件={os.path.getsize(p)}")
+assert total_blk * blk == 21474836480, total_blk * blk
+print("SPARSE_OK 20 GiB")
+PY
+          sha256sum "$(readlink -f "$s")" | sed 's/^/  /'
+          cat "$GK3_WORKDIR/publish/super.img.sha256.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: manifest-log-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            /mnt/gk3-build/current/manifest.json
+            /mnt/gk3-build/current/logs/pack.log
+            /mnt/gk3-build/publish/super.img.sha256.txt
