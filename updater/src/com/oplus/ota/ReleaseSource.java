@@ -11,7 +11,7 @@ import java.net.URL;
 /** 拉取服务端 index.json（在线更新清单）。字段见 docs/OTA-ONLINE-PLAN.md。 */
 final class ReleaseSource {
 
-    static final String DEFAULT_URL = "https://pub-272531f7ce6d48e0b94278a2c563d637.r2.dev/gk3-ota/stable/index.json";
+    static final String DEFAULT_URL = "https://ota.cenmin.cn/gk3-ota/stable/index.json";
 
     static final class Part {
         String name;

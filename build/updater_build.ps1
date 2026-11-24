@@ -37,9 +37,14 @@ Write-Host "== 2/6 链接资源与清单"
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link 失败" }
 
 Write-Host "== 3/6 编译 Java"
+$JdkBin = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME "bin" } else { "C:\Program Files\Zulu\zulu-25\bin" }
+if (-not (Test-Path $JdkBin)) { throw "找不到 JDK：$JdkBin（设 JAVA_HOME）" }
+$env:JAVA_HOME = Split-Path $JdkBin -Parent
+$env:PATH = "$JdkBin;$env:PATH"
+$Javac = Join-Path $JdkBin "javac.exe"
 $sources = @(Get-ChildItem -Path (Join-Path $Src "src") -Recurse -Filter *.java | ForEach-Object { $_.FullName })
 $sources += @(Get-ChildItem -Path "$Work\gen" -Recurse -Filter *.java | ForEach-Object { $_.FullName })
-& javac --release 8 -nowarn -cp $Jar -d "$Work\classes" $sources
+& $Javac --release 8 -nowarn -cp $Jar -d "$Work\classes" $sources
 if ($LASTEXITCODE -ne 0) { throw "javac 失败" }
 
 Write-Host "== 4/6 dex"
