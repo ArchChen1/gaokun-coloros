@@ -36,10 +36,16 @@ esac
 
 echo '== lpmake'
 LPM=$(cd "$(dirname "$0")/.." && pwd)/tools/otatools/bin/lpmake
+LPM_SHA=ea077cf98e2178828c9376a03d5dec0cc98b59458c2a0b94cda9e59b4218467a
 if [ -f "$LPM" ]; then
   # 从 Windows 提交的文件在 Linux 上可能丢掉执行位（git 不记录 filemode），这里补上
   [ -x "$LPM" ] || chmod +x "$LPM"
-  echo "  OK   $LPM"
+  got=$(sha256sum "$LPM" | cut -d' ' -f1)
+  if [ "$got" = "$LPM_SHA" ]; then
+    echo "  OK   $LPM（静态，sha 已固定）"
+  else
+    echo "  FAIL lpmake sha 不符：$got"; echo "       期望 $LPM_SHA（换工具要同时改这里与 tools/README.md）"; exit 1
+  fi
 else
   echo '  FAIL 缺 tools/otatools/bin/lpmake'; exit 1
 fi
