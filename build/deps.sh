@@ -3,7 +3,7 @@
 set -euo pipefail
 SUDO=${SUDO:-sudo}
 
-need_pkgs="python3 python3-pip curl git zstd e2fsprogs attr android-sdk-libsparse-utils"
+need_pkgs="python3 python3-pip curl git zstd e2fsprogs attr android-sdk-libsparse-utils clang"
 need_pkgs="$need_pkgs erofs-utils util-linux"
 
 if ! command -v apt-get >/dev/null; then

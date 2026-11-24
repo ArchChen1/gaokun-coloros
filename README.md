@@ -22,14 +22,23 @@
 
 ## 快速开始
 
-```bash
-sudo make deps            # 装依赖（erofs-utils、e2fsprogs、simg2img、zstd…）
-make fetch                # 抓输入（8 GB 左右，清单见 inputs/manifest.txt）
-make verify               # 基座断言，必须全绿
-make parts VERSION=v54    # 固化基座 + 重打 system/odm，写 manifest.json
-make pack                 # 出 super + 发布到 $GK3_PUBLISH
-# 或者一步：make all VERSION=v54
+```powershell
+git clone --recurse-submodules https://github.com/ArchChen1/gaokun-coloros.git
+cd gaokun-coloros
+.\build.ps1 -Target doctor              # 环境自检
+.\build.ps1 -Target deps                # WSL 侧依赖
+.\build.ps1 -Target system -Version v54 # 系统镜像：parts + pack
+.\build.ps1 -Target installer          # 安装器：后端(WSL 交叉编) + Flutter(Windows)
+.\build.ps1 -Target all -Version v54    # 两条线一起
 ```
+
+系统镜像也可以在 WSL 里直接用 make：
+
+```bash
+sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pack
+```
+
+安装器的前置（Flutter 3.47.2、VS2022 C++、llvm-mingw）见 `docs/BUILD-INSTALLER.md`。
 
 产物：`$GK3_STATE/release/super-v54.img`（附 `super.img` 软链）与 `$GK3_PUBLISH/super.img` + sha256。
 默认 `GK3_WORKDIR=$HOME/gk3-build`，可用 `~/.config/gk3-coloros/env` 指到已有目录，详见 `docs/BUILD-FROM-SCRATCH.md`。
