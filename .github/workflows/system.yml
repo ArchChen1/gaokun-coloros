@@ -39,7 +39,7 @@ jobs:
         run: df -h / /mnt | sed 's/^/  /'
 
       - name: 依赖
-        run: sudo bash build/deps.sh
+        run: sudo -E bash build/deps.sh
 
       - name: 拉输入（Release inputs-v1）
         run: sudo -E bash build/fetch.sh

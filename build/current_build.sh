@@ -46,6 +46,9 @@ echo '== 3. 出包前断言（允许 parts/system、parts/odm 尚不存在）'
 GK3_ALLOW_MISSING_PARTS=1 bash "$SCRIPT_DIR/current_verify.sh"
 
 echo '== 4. 从断言过的树重打 system / odm'
+for t in "$GK3_MKFS_EROFS" "$GK3_FSCK_EROFS"; do
+  [ -x "$t" ] || { echo "缺 erofs 工具: $t（先跑 make deps，它会编 1.9.4）"; exit 1; }
+done
 rm -f "$GK3_PARTS/system.erofs" "$GK3_PARTS/odm.erofs"
 "$GK3_MKFS_EROFS" -zlz4 -b4096 -C65536 -L system "$GK3_PARTS/system.erofs" "$GK3_SYS_TREE" >/dev/null
 "$GK3_MKFS_EROFS" -zlz4 -b4096 -C65536 -L odm "$GK3_PARTS/odm.erofs" "$GK3_ODM" >/dev/null

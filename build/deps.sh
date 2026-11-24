@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 SUDO=${SUDO:-sudo}
 
-need_pkgs="python3 python3-pip curl git zstd e2fsprogs attr android-sdk-libsparse-utils clang util-linux"
+need_pkgs="python3 python3-pip curl git zstd e2fsprogs attr android-sdk-libsparse-utils clang util-linux erofs-utils"
 # 编 erofs-utils 需要
 need_pkgs="$need_pkgs build-essential autoconf automake libtool pkg-config liblz4-dev liblzma-dev zlib1g-dev uuid-dev"
 
