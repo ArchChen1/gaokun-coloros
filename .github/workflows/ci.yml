@@ -54,4 +54,10 @@ jobs:
       - run: python3 -c "import ast,sys; ast.parse(open('installer/tools/make_release.py').read())"
       - name: inputs 清单格式
         run: |
-          awk '!/^#/ && NF && NF!=4 {print "坏行: " NR ": " $0; bad=1} END{exit bad}' inputs/manifest.txt
+          # 数据行：<sha256> <bytes> <name> [url]，url 可省略；注释与空行跳过
+          awk '!/^#/ && NF {
+                 if ($1 !~ /^[0-9a-f]{64}$/) { print "sha 不合法: " NR ": " $1; bad=1 }
+                 if ($2 !~ /^[0-9]+$/)      { print "bytes 不合法: " NR ": " $2; bad=1 }
+                 if (NF < 3)                { print "缺字段: " NR; bad=1 }
+               } END{exit bad}' inputs/manifest.txt
+          echo "数据行 $(grep -vcE '^\s*(#|$)' inputs/manifest.txt) 条"
