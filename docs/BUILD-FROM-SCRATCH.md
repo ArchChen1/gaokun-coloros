@@ -95,6 +95,11 @@ make all VERSION=v54       # 等价于 parts + pack
 
 CI 里同一条链路由 `.github/workflows/system.yml` 执行：干净运行器上 `fetch` → `build` → `pack`，这就是“拉取就能编译”的验收。
 
+**已实测（system run #6，2026-11-24）**：从 Release `inputs-v1` 拉 15 个分片 → 13 条断言全绿 → 重打 system/odm →
+`lpmake` 出包 9,833,445,028 B、sha256 `d3a59031…85e8`，sparse 展开 20 GiB、123 个分块。
+本机（`mkfs.erofs` 1.9.4）同输入是 9,833,219,624 B / `a3d0d0f3…6b0b`。两者体积差 225 KB，
+来自 erofs-utils 版本（GitHub 运行器自带 1.7.1）。要逐字节复现就把 `erofs-utils` 钉到 1.9.4（源码按 sha 装）。
+
 ## 5. 刷机
 
 安装器“卸载 → 安装”会清数据，安装目录需要三件：
