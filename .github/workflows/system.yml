@@ -54,17 +54,7 @@ jobs:
           set -e
           s=$GK3_WORKDIR/current/release/super.img
           ls -l "$(readlink -f "$s")"
-          python3 - "$s" <<'PY'
-import os, struct, sys
-p = os.path.realpath(sys.argv[1])
-with open(p, 'rb') as f:
-    hdr = f.read(28)
-magic, major, minor, fhs, chs, blk, total_blk, total_chunks = struct.unpack('<IHHHHIII', hdr[:24])
-assert magic == 0xED26FF3A, hex(magic)
-print(f"sparse: blk={blk} 分块={total_chunks} 展开={total_blk*blk} 字节 文件={os.path.getsize(p)}")
-assert total_blk * blk == 21474836480, total_blk * blk
-print("SPARSE_OK 20 GiB")
-PY
+          python3 tools/sparse_check.py "$s"
           sha256sum "$(readlink -f "$s")" | sed 's/^/  /'
           cat "$GK3_WORKDIR/publish/super.img.sha256.txt"
 
