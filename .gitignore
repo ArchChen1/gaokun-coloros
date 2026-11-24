@@ -18,3 +18,8 @@ build/legacy/*.log
 .idea/
 Thumbs.db
 desktop.ini
+
+# 凭据（R2 等）不入库
+.secrets/
+.env
+*.env
