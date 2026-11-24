@@ -61,21 +61,15 @@ jobs:
       - name: 编 mke2fs（arm64）
         run: bash installer/backend/mke2fs/build.sh arm64
 
-      - name: 产物校验
+      - name: 产物校验（PE machine 必须是 0xAA64）
         run: |
           ls -l installer/backend/build/arm64/gk3w.exe
           ls -l installer/backend/build/mke2fs-arm64/mke2fs.exe
           ls -l installer/backend/build/sdboot/systemd-bootaa64.efi
-          # PE 头 machine 必须是 0xAA64（ARM64），x64 的会在平板上靠模拟跑，测不出来
-          for f in installer/backend/build/arm64/gk3w.exe installer/backend/build/mke2fs-arm64/mke2fs.exe; do
-            python3 - "$f" <<'PY'
-import struct, sys
-d = open(sys.argv[1], 'rb').read()
-m = struct.unpack('<H', d[struct.unpack('<I', d[0x3c:0x40])[0] + 4:][:2])[0]
-print(f"{sys.argv[1]}: machine 0x{m:04X}")
-sys.exit(0 if m == 0xAA64 else 1)
-PY
-          done
+          # x64 的会在平板上靠模拟跑，测不出来
+          python3 "$GITHUB_WORKSPACE/tools/pe_machine.py" 0xAA64 \
+            installer/backend/build/arm64/gk3w.exe \
+            installer/backend/build/mke2fs-arm64/mke2fs.exe
 
       - uses: actions/upload-artifact@v4
         with:
