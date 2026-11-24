@@ -1,0 +1,66 @@
+name: Game & app compatibility / 游戏与应用兼容性
+description: A game or app crashes, displays incorrectly, runs slowly or refuses to start. / 某个游戏或应用崩溃、显示异常、运行缓慢或拒绝启动。
+labels: ["game-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Apps that check for root, an unlocked boot chain or Play Integrity may refuse to run on this system; see the [known limitations](https://github.com/vahiru/gaokun-android/blob/main/docs/known-limitations.md). Reports are still welcome, as they help others know what to expect.
+        检测root、未上锁启动链或Play Integrity的应用，在本系统上可能拒绝运行，详见[已知限制](https://github.com/vahiru/gaokun-android/blob/main/docs/known-limitations.zh-CN.md)。这类情况也欢迎反馈，可以帮其他用户了解哪些应用能用。
+
+  - type: input
+    id: app
+    attributes:
+      label: Game or app, and its version / 游戏或应用及其版本
+      placeholder: "Genshin Impact 5.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: result
+    attributes:
+      label: What happens / 情况
+      options:
+        - Runs well / 运行正常
+        - Display problems / 显示异常
+        - Runs too slowly / 运行太卡
+        - A feature does not work (login, camera, microphone, payment...) / 某项功能不可用（登录、相机、麦克风、支付等）
+        - Crashes while in use / 使用中崩溃
+        - Crashes at launch / 启动时崩溃
+        - Refuses to run (root or integrity check) / 拒绝运行（检测到root或完整性校验未通过）
+        - Cannot be installed / 无法安装
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: System version / 系统版本
+      description: The release you installed, or the output of `adb shell getprop ro.build.date.utc`. / 安装的版本，或`adb shell getprop ro.build.date.utc`的输出。
+      placeholder: "v1.0.0-rc.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Installed from / 安装来源
+      options:
+        - Google Play / Google Play
+        - The developer's website / 官方网站
+        - Another app store / 其他应用商店
+        - Other / 其他
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Details / 详细情况
+      description: The error message if there was one, the in-game graphics settings, and the frame rate you saw. Screenshots or a short video help with display problems. / 如有报错请写下原文，以及游戏内的画质设置和看到的帧率。显示问题请附截图或短视频。
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / 日志
+      description: |
+        For a crash, the newest file in `/data/tombstones/` and `adb logcat -b all -d` taken right after the crash help the most. See the [FAQ](https://github.com/vahiru/gaokun-android/blob/main/docs/FAQ.md) for how to collect them.
+        崩溃时，`/data/tombstones/`里最新的文件和崩溃后立即抓取的`adb logcat -b all -d`最有帮助，抓取方法见[常见问题](https://github.com/vahiru/gaokun-android/blob/main/docs/FAQ.zh-CN.md)。

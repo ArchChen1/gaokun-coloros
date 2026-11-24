@@ -1,0 +1,290 @@
+# sepolicy/file_contexts -- gaokun3
+#
+# ⚠️ 全系统仍是 permissive（TODO B1）。这里只放【标签】——
+#    标签写对了，AOSP 核心策略里现成的 allow 规则就会生效，
+#    不必自己写 allow。要新增 allow 规则的条目一律先想清楚再动。
+#    （ⓘ "仍是 permissive"是 2026-08 的状态：dev.10 起发布构建默认 enforcing（D5）。"只放标签"的原则不变。）
+#
+# ── A17（crDroid 17.0 / lineage-24.0 / cp2a）迁移核对，2026-10-25 ─────────────────────────
+# 这个目录里的注释大多是对着 lineage-23.0（refs/lineage-sepolicy）或 crDroid 16.0 树写的，行号都是那时的。
+# 本次对着 refs/a17/system/sepolicy 与构建机 ~/crdroid（17.0，system/sepolicy 7b39d96）复核：
+#   · 本目录引用的类型 / 属性 / 类 / 权限 / 宏在 A17 里都还在，而且都在 public/ 或 vendor/（vendor 策略引用得到）。
+#   · file_contexts / genfs_contexts / property_contexts / service_contexts 没有和 A17 平台新增条目重名的
+#     （A17 新加的 genfscon sysfs /class/block、binder /binder_logs/state_hashed 等都碰不到我们的路径）。
+#   · 在构建机树外编了 checkpolicy（external/selinux），按 policy.go 的顺序把 plat + lineage common（public / private /
+#     dynamic / vendor）+ 本目录 + dragonboard minigbm 拼成整套 policy.conf（cp2a 的 RELEASE_* 取值、board API 202604），
+#     userdebug 与 user 两种变体都过了全部 neverallow（同法故意加一条违规能报出来，说明检查是真跑了）。
+#     ⚠️ 这不等于 `m selinux_policy`：没跑 treble 拆分、compat mapping、checkfc / property_info_checker。
+#   · 常被引用的几条 neverallow 在 A17 的新位置（旧注释里的行号别再信）：
+#       block_device 打不开            private/domain.te:757（lineage-23.0 是 :705）
+#       vendor 域执行 system 文件       private/domain.te:1229-1252、:1303-1340（豁免属性仍是 vendor_executes_system_violators）
+#       debugfs 无构建变体豁免          private/domain.te:1546
+#       sys_rawio（userdebug 豁免）     private/domain.te:2120-2133
+#       sys_ptrace                      private/domain.te:1722-1735
+#       binderfs_logs（userdebug 豁免） private/domain.te:734-740
+#       vendor_default_prop 只许 init 设 private/domain.te:854
+#       coredomain 读 / 设 vendor 属性  private/property.te:196-207；coredomain 设 vendor 属性（兼容属性模式）:496-507
+#   · policycap：A17 比 A16 多开了 netlink_xperm（见 hal_wifi_default.te）；functionfs_seclabel 在 crDroid 16.0 就已开着；
+#     memfd_class 两边都没开（见 crash_dump.te）。
+
+/vendor/etc/init/hw/init\.gaokun3\.rc       u:object_r:vendor_configs_file:s0
+/vendor/etc/init/hw/init\.gaokun3\.usb\.rc  u:object_r:vendor_configs_file:s0
+
+# ── GPU：/dev/dri/* 此前【没有任何人】给它打标签 ──────────────────────────
+#
+# 实测（2026-08-22，设备上核对，不是推测）：
+#   * /dev/dri/card1 与 /dev/dri/renderD128 的标签都是通用兜底的
+#     u:object_r:device:s0
+#   * /vendor/etc/selinux/vendor_file_contexts 里【一条】dri 相关的都没有
+#   * AOSP 核心的 plat_file_contexts 只有 /dev/pvrsrvkm → gpu_device
+#     （PowerVR），根本没考虑过 /dev/dri —— 因为常见 Android 设备走的是
+#     /dev/kgsl-3d0 或 mali 节点，不是 DRM 渲染节点。
+#
+# 后果：一次普通启动里约 130 条 avc denial 都是这两个节点造成的，主体包括
+# surfaceflinger、bootanim、system_server、system_app、platform_app
+# （launcher3）、hal_graphics_allocator、hal_graphics_composer、mediaswcodec。
+# 见 docs/dev/android-bringup.md。
+#
+# gpu_device 是 AOSP 的【公共】类型，上面这些域的读写规则核心策略里全都现成，
+# 所以只要标签对了，那一整片 denial 一起消失，不需要新增任何 allow。
+#
+# ⚠️ 本机的 DRM 主节点是 card1（不是 card0）—— 用通配覆盖，别写死。
+/dev/dri/card[0-9]*          u:object_r:gpu_device:s0
+/dev/dri/renderD[0-9]*       u:object_r:gpu_device:s0
+
+# ── /dev/dri【目录本身】：同一招再用一次，仍然一条 allow 都不用写 ──────────
+#
+# 症状是 mesa/libdrm 用 opendir+readdir 枚举显卡节点被拒 { read open }
+# （不是 search —— `allow domain device:dir search` 是全局的，domain.te:69）。
+# 上面那条注释当初判断"给目录换类型解决不了、需要真的写 allow"，
+# ★ 那个判断是错的：核心策略对 gpu_device【这个类型的 dir】早写好了
+# r_dir_perms，而且覆盖的正是那批被拒的主体（逐条核对 lineage-23.0 的
+# system/sepolicy）：
+#     surfaceflinger.te:41   bootanim.te:36   system_server.te:494
+#     hal_graphics_allocator.te:11   hal_graphics_composer.te:14
+#     mediaswcodec.te:26   mediaserver.te:67   vendor/mediacodec.te:20
+#     app.te:394 → allow { appdomain -isolated_app_all } gpu_device:dir r_dir_perms;
+#                  （system_app / platform_app(launcher3) 都在 appdomain 里）
+# 所以把目录也标成 gpu_device 就够了，和上面标 card1/renderD128 是同一类胜利。
+# ⓘ A17：上面那批逐域规则被收成了一个属性 —— private/gpu_sphal_domain.te:3-4 给 gpu_sphal_domain
+#   gpu_device 的 chr_file rw / dir r_dir_perms；surfaceflinger / bootanim / system_server / mediaswcodec /
+#   mediaserver / vendor 的 mediacodec / hal_camera_default 用 gpu_sphal_use() 挂上，appdomain（除 isolated_app）、
+#   hal_graphics_allocator、hal_graphics_composer 由 private/technical_debt.cil:67-78 挂上。结论不变：标签对了就够。
+# ★ /dev 下的【目录】确实吃 file_contexts —— AOSP 自己就这么干：
+#   system/sepolicy/private/file_contexts:157 `/dev/socket(/.*)?  u:object_r:socket_device:s0`
+#   （那条的 `(/.*)?` 覆盖的就包括目录本身）。
+# ⬜ 上机后记得核一眼：`ls -Zd /dev/dri` 应当是 u:object_r:gpu_device:s0。
+/dev/dri                     u:object_r:gpu_device:s0
+
+# ─────────────────────────────────────────────────────────────────────────
+# 转 enforcing 第 1 步：给我们自己的可执行文件打标签
+# （顺序：先定义域，再普查，
+#  最后才写 allow。在此之前收集到的 denial 主体全是 u:r:init:s0，照抄是错的。）
+# ─────────────────────────────────────────────────────────────────────────
+
+# ── 三个 HAL：直接复用 AOSP 的标准域，一条 allow 都不用写 ────────────────
+#
+# ★ 这和 /dev/dri 那次是同一类胜利：标签对了，核心策略里现成的规则就生效。
+#   AOSP 已经为这三个 *_default 域写好了全部 binder / 服务注册 / 硬件访问规则
+#   （system/sepolicy/vendor/{hal_sensors_default,hal_light_default,
+#   hal_bootctl_default}.te）。我们的二进制只是换了个名字，
+#   行为与 *.example 一致。
+#
+# ⚠️ 在此之前它们【没有任何 file_contexts 条目】，于是留在 init 域里 ——
+#    #60 的普查里那 46 条 `comm="android.hardwar"` 就是它们。
+/vendor/bin/hw/android\.hardware\.sensors-service\.gaokun3   u:object_r:hal_sensors_default_exec:s0
+/vendor/bin/hw/android\.hardware\.light-service\.gaokun3     u:object_r:hal_light_default_exec:s0
+/vendor/bin/hw/android\.hardware\.boot-service\.gaokun3      u:object_r:hal_bootctl_default_exec:s0
+/vendor/bin/hw/android\.hardware\.thermal-service\.gaokun3   u:object_r:hal_thermal_default_exec:s0
+# 相机 HAL（libcamera 软件 ISP）—— 2026-09-14 前它没有条目、跑在 init 域里（实机 ps -AZ 看到的）。
+# AOSP 的 hal_camera_default 域已放行 video_device / camera_device / dmabuf heap / gpu_device；
+# 本仓 hal_camera_default.te 补 libcamera 特有的几条（sysfs 枚举、闪光灯 LED、日志目录）。
+/vendor/bin/hw/android\.hardware\.camera\.provider-service\.gaokun3   u:object_r:hal_camera_default_exec:s0
+# EC 充电上限（v1.0 PWR-14，health/）—— 复用 LineageOS 的 hal_lineage_health_default 域：类型、hal_server_domain、
+# init_daemon_domain、servicemanager 的 binder_call 都在构建树 device/lineage/sepolicy/common/vendor/hal_lineage_health_default.te:1-7
+# （已编进本机 vendor_sepolicy.cil，构建机 out/ 里实查）；lineage 自己的条目只标它那个名字（common/vendor/file_contexts:10）。
+# 本仓只补 sysfs 那一条，见 sepolicy/hal_lineage_health_default.te。⬜ 未编译。
+/vendor/bin/hw/vendor\.lineage\.health-service\.gaokun3     u:object_r:hal_lineage_health_default_exec:s0
+# USB 端口 HAL（usb/）—— AOSP 的 hal_usb_default 域（system/sepolicy vendor/hal_usb_default.te），
+# 本仓 hal_usb_default.te 补它读 UDC 状态、EC 适配器和设 vendor.gaokun3.usbrole.* 的几条。
+/vendor/bin/hw/android\.hardware\.usb-service\.gaokun3       u:object_r:hal_usb_default_exec:s0
+
+# ── 我们自己的服务脚本：各给一个域 ───────────────────────────────────────
+#
+# ⚠️ 这几个此前在 .rc 里硬写 `seclabel u:r:shell:s0` —— 那是 permissive 时代的
+#    权宜之计：让一个 root 守护进程跑在【为 adb 设计的】shell 域里，
+#    方向是反的，转 enforcing 时也过不了。seclabel 已从 .rc 里删除，
+#    改由这里的标签驱动 init 自动做域转换。
+/vendor/bin/audio-route\.sh          u:object_r:gaokun3_audioroute_exec:s0
+/vendor/bin/gaokun3-hangdump\.sh     u:object_r:gaokun3_hangdump_exec:s0
+/vendor/bin/gaokun3-qrtr-lookup    u:object_r:gaokun3_qrtr_lookup_exec:s0
+/vendor/bin/gaokun3-keyboard\.sh     u:object_r:gaokun3_keyboard_exec:s0
+/vendor/bin/smmu-nostall\.sh         u:object_r:gaokun3_smmustall_exec:s0
+/vendor/bin/gaokun3-usbrole\.sh      u:object_r:gaokun3_usbrole_exec:s0
+/vendor/bin/gaokun3-rproc-kick\.sh   u:object_r:gaokun3_rprockick_exec:s0
+/vendor/bin/gaokun3-ssc-recover\.sh  u:object_r:gaokun3_sscrecover_exec:s0
+/vendor/bin/gaokun3-wlan-ap\.sh      u:object_r:gaokun3_wlanap_exec:s0
+/vendor/bin/gaokun3-wifi-wake\.sh    u:object_r:gaokun3_wifiwake_exec:s0
+# ⚠️★ 2026-09-18 补：触摸手感模式（v0.6.2 随 #116 加的 touchmode.rc）当初
+#    【整个漏了这一步】—— 服务没有 seclabel、可执行文件没有标签，于是它和
+#    2026-08-23 之前的那批服务一样留在 init 域里。permissive 下功能完全正常，
+#    所以两版都没人发现。这正是 #60 说的那种"denial 主体是 u:r:init:s0"的
+#    噪声源，也是转 enforcing 时会直接起不来的服务。
+/vendor/bin/gaokun3-touch-mode\.sh   u:object_r:gaokun3_touchmode_exec:s0
+
+# ⚠️ bpf-relabel.sh 【故意】不给独立域，继续用 .rc 里的
+#    `seclabel u:r:vendor_init:s0`：它唯一的作用是在【没打 patches/kernel/core/0002 的
+#    内核上】给 bpffs 子目录 chcon，而 relabel bpffs 是受 neverallow 限制的
+#    动作，只有 vendor_init 拿得到。给它独立域反而会让那条保命通路失效。
+#    （在打了 0007 的内核上它会提前 exit 0，实测 chcon 一次都不跑 —— 见 #60。）
+#    ⚠️★ 2026-09-27 退役（#126）：这段推理漏了一半 —— vendor_init 能 relabel bpffs 不假，
+#    但 vendor_init【进不去】一个 vendor 脚本：vendor_init.te:356 禁 entrypoint、:365 禁
+#    execute_no_trans，都没有豁免。也就是说这条"保命通路"只在 permissive 下存在。
+#    脚本与 rc 已不再装进镜像（device.mk），根治靠内核 patches/kernel/core/0002。
+
+# ⬜ /vendor/bin/tu_debug_loader.sh —— 调试用，不由 init 启动，不给标签。
+#
+# ★ gaokun3-ota-postinstall.sh 这里【故意】没有条目，而且不该有：
+#   update_engine 把【新的】vendor 分区挂到 /postinstall 时会把整块文件系统
+#   relabel 成 postinstall_file（system/sepolicy/private/update_engine_common.te:47），
+#   再由 domain_auto_trans(update_engine_common, postinstall_file, postinstall)
+#   （同文件 :14）把脚本转进 postinstall 域 —— 与本文件里的标签无关。
+#   它要的权限写在 sepolicy/postinstall.te 里。
+
+# hexagonrpcd：路径从构建产物核实（out/.../vendor/bin/hexagonrpcd）
+/vendor/bin/hexagonrpcd              u:object_r:hexagonrpcd_exec:s0
+
+# ─────────────────────────────────────────────────────────────────────────
+# 第 2 步：给还是通用兜底标签的节点定类型
+# 证据来自 2026-08-23 的实机普查（用户真实使用中产生的 2095 条 denial，
+# 去重成 25 种元组）。每一条下面都注了是谁在被拒。
+# ─────────────────────────────────────────────────────────────────────────
+
+# ── Venus 硬解服务：★ 第 1 步漏了它 ─────────────────────────────────────
+# 实机 `ps -A -o LABEL` 显示它跑在 u:r:init:s0，denial 里是
+# `comm="DecodeComponent"` 开 /dev/video0 被拒。
+# AOSP 给同类服务用的就是 mediacodec_exec
+# （system/sepolicy/vendor/file_contexts:88 的 c2-default-service）。
+/vendor/bin/hw/android\.hardware\.media\.c2-service-v4l2  u:object_r:mediacodec_exec:s0
+
+# ── 块设备：按 by-name 别名打标签（2026-09-29 第七轮改，此前按分区号写死）─────────
+# ⚠️★★ 此前这里是 /dev/block/nvme0n1p1…p10 写死分区号，对的只是【开发机】的老布局
+#    （p1=esp p2=userdata p4=misc p5/p6=boot p8=super p10=metadata）。v0.7.0 起的图形安装器
+#    按 esp, misc, metadata, boot_a, boot_b, super, [gk3rescue], userdata 的顺序 `sgdisk -n 0:`
+#    （取下一个空号）⇒ 新装机 p2=misc、p4=boot_a、
+#    p6=super……标签全错：enforcing 下 bootctl 读不了 misc、postinstall 读不了 boot_x、
+#    snapuserd 碰不了 super、fsck 碰不了 userdata。开发机布局恰好对得上，普查与试跑都看不见。
+#    设备上 policy-query：hal_bootctl_default userdata_block_device open DENY 等（第七轮审计）。
+# ★ 现在按 by-name 别名：ueventd 建节点时用 SelabelLookupFileContextBestMatch(path, links)
+#   （refs/lineage-system-core/init/devices.cpp:406），coldboot 时对已有节点重标（:427-440）；
+#   核心策略自己也这么写（private/file_contexts:106 的 by-name/zoned_device）。
+#   ⚠️ 不能再留 nvme0n1pN 的行：best-match 先取节点路径的精确匹配，会盖过别名。
+#   ⚠️ 用精确名、不用正则（boot_[ab] 拆成两行），同理。
+#   ⚠️ 符号链接本身也会拿到这些类型：devices.cpp:606 用 SelabelLookupFileContext(link, 0)，
+#      mode 0 不看 -b 限定。这是 AOSP 设备的通行做法，消费者对这些类型的 lnk_file 读权限核心策略
+#      都有（init 的 lnk_file relabelto 见 init.te）。
+# ★ ESP 两个名字：我们整盘安装的 PARTLABEL 是 esp；双系统复用 Windows 的 ESP，它叫
+#   "EFI system partition"，ueventd 规整成 EFI_system_partition（devices.cpp:474-486）。
+#   bootctl HAL（boot_control/EspSlot.cpp）与 postinstall 两个名字都试。
+# ⚠️★ ESP 为什么必须有专用类型：domain.te:705 那条 neverallow 让任何域都打不开通用
+#    block_device —— 加 allow 只会让 sepolicy_neverallows 构建失败。类型定义与出处见 device.te。
+/dev/block/by-name/esp                   -b u:object_r:gaokun3_esp_block_device:s0
+/dev/block/by-name/EFI_system_partition  -b u:object_r:gaokun3_esp_block_device:s0
+/dev/block/by-name/misc                  -b u:object_r:misc_block_device:s0
+/dev/block/by-name/metadata              -b u:object_r:metadata_block_device:s0
+/dev/block/by-name/boot_a                -b u:object_r:boot_block_device:s0
+/dev/block/by-name/boot_b                -b u:object_r:boot_block_device:s0
+/dev/block/by-name/super                 -b u:object_r:super_block_device:s0
+/dev/block/by-name/userdata              -b u:object_r:userdata_block_device:s0
+
+# ── /dev/media* 与 /dev/v4l-subdev*：AOSP 只给 /dev/video* 打了 video_device ──────
+# （system/sepolicy/private/file_contexts:225 只有 video 一行；media/v4l-subdev 是主线
+#   Media Controller 的节点，手机 SoC 的相机 HAL 不经过它们，AOSP 就没想过）。
+# libcamera 三种节点都要开；hal_camera 域对 video_device 有 rw，标签对了规则就现成。
+/dev/media[0-9]*         u:object_r:video_device:s0
+/dev/v4l-subdev[0-9]*    u:object_r:video_device:s0
+
+# ── 同进程 HAL 库：又一次"标对就零 allow"（2026-09-18 实机）────────────────
+#
+# 证据：新构建完整启动日志里，surfaceflinger / bootanim / system_app /
+# platform_app(launcher3) 四个域各 5 条
+#   scontext=… tcontext=u:object_r:vendor_file:s0 tclass=file
+#   { execute getattr map open read }
+#   path=/vendor/lib64/hw/vulkan.freedreno.so
+#   path=/vendor/lib64/android.hardware.graphics.allocator@{3,4}.0.so
+# —— 这三个库现在挂的是通用 vendor_file（实机 ls -Z 核过），而 /vendor/lib64/hw
+# 下别的库已经是 same_process_hal_file 了。
+#
+# ★ 标成 same_process_hal_file 之后【一条 allow 都不用写】：
+#     app.te:478                  allow appdomain same_process_hal_file:file {…}
+#     hal_graphics_allocator.te:7 allow hal_graphics_allocator_client … {…}
+#     （surfaceflinger / bootanim 都是 graphics allocator 的客户端）
+#   核心策略 domain.te:165-169 把 coredomain 排除在通用放行之外、
+#   "由各个 coredomain 单独授予"，而上面那两条正是那些单独授予。
+#
+# ⚠️ 这批 denial **一直都在**，只是上一轮的样本（旧机器上滚掉早期启动的 dmesg）
+#    看不见它们 —— 与 hwc 那条 netlink 是同一个取样偏差。
+/vendor/lib(64)?/hw/vulkan\.freedreno\.so                          u:object_r:same_process_hal_file:s0
+/vendor/lib(64)?/android\.hardware\.graphics\.allocator@[0-9]+\.[0-9]+\.so   u:object_r:same_process_hal_file:s0
+# ★ 2026-09-27 补上最后一个：/vendor/lib64/libui.so（同进程 HAL 的依赖）。
+#   证据：完整开机日志里 surfaceflinger / bootanim / system_app / platform_app 各 5 条
+#   `vendor_file:file { read open getattr map execute }` path=/vendor/lib64/libui.so。
+#   ⚠️ permissive 下同一个 (主体, 类型, 类, 权限) 只记一次，所以"只看到 libui"不代表
+#   只有它 —— 已按 /proc/<pid>/maps 把 SF / systemui / launcher / hwc 映射的 /vendor 文件
+#   全列了一遍：27 个里 26 个已是 same_process_hal_file，只剩这一个。
+/vendor/lib(64)?/libui\.so                                           u:object_r:same_process_hal_file:s0
+# ★ 2026-10-26 A17 首次上机（戳 1792943610）：A17 的 vendor libui.so 新增 NEEDED libaconfig_storage_read_api_cc.so，
+#   它挂的是 vendor_file ⇒ surfaceflinger 在 sphal 命名空间 dlopen turnip 时读不了它
+#   （avc denied { read } … name="libaconfig_storage_read_api_cc.so" scontext=surfaceflinger tcontext=vendor_file），
+#   链接器报 "library … not found: needed by /vendor/lib64/libui.so in namespace sphal" ⇒ ANGLE 起不来 Vulkan
+#   ⇒ "no suitable EGLConfig found" ⇒ SF 每 5 秒崩一次、system_server 跟着循环，永远开不完机。
+#   在设备上把 vulkan.freedreno.so 的 /vendor 依赖闭包走了一遍：25 个里只有它不是 same_process_hal_file；
+#   它自己只依赖 libc++ / libc / libm / libdl。设备上 bind mount 一份改了标签的副本、重启 SF 后 16 秒开机完成（热验证）。
+/vendor/lib(64)?/libaconfig_storage_read_api_cc\.so                  u:object_r:same_process_hal_file:s0
+
+# libcamera 的日志文件（gaokun3-camera.rc 的 LIBCAMERA_LOG_FILE）
+/data/vendor/camera(/.*)?   u:object_r:gaokun3_camera_vendor_data_file:s0
+
+# ── /dev/fastrpc-*：hexagonrpcd 的命根子，AOSP 里没有对应类型 ───────────
+# 传感器整条链（accel/gyro → SSC → QMI）都走它。此前是通用 device 类型。
+# ⓘ 正则只盖 fastrpc-adsp / -cdsp / -sdsp；fastrpc-cdsp-secure 故意留在通用 device：
+#   没有任何服务用它（root 0600、不在任何 rc 里）。实际只用 -sdsp（hexagonrpcd-sdsp.rc）。
+/dev/fastrpc-[a-z]+      u:object_r:gaokun3_fastrpc_device:s0
+
+# ── /dev/mem：整棵 AOSP 策略里【没有任何条目】（memory_device 类型也不存在）──
+# ⚠️ 打上专用类型不是为了给谁开权限，恰恰相反：是为了让"谁在碰它"变得显式。
+#    唯一被允许的是 gaokun3_smmustall，而且只在 userdebug（gaokun3_scripts.te 末尾，
+#    2026-09-27 #126 改的；sys_rawio 那条 neverallow 只在 userdebug 上豁免）。
+#    正解是把 TODO B6 做掉，让这个脚本和这条放行一起消失。见 #75。
+/dev/mem                 u:object_r:gaokun3_devmem_device:s0
+
+# ── /vendor/firmware：只给内核读（类型定义与理由见 device.te，规则见 kernel.te）──
+/vendor/firmware(/.*)?   u:object_r:gaokun3_firmware_file:s0
+
+# ── 唤醒源：用正则兜住所有 /sys/devices/platform 下的 wakeupN（2026-09-27）──────────
+#
+# 实测本机 52 个唤醒源里 19 个还是通用 sysfs（system_suspend 开机时逐个读 name 等属性）。
+# 其中能写死路径的都在 genfs_contexts 里；但有几个父路径带动态编号 ——
+# xhci-hcd.N.auto、键盘所在的 usb3/3-3、alarmtimer.N.auto —— genfscon 写不稳。
+#
+# ★ 这条靠 ueventd：它在 coldboot 与之后每个 add 事件上都对 sysfs 路径做
+#   递归 restorecon（system/core/init/devices.cpp:379-383 FixupSysPermissions），
+#   用的就是 file_contexts；ueventd 有 sysfs_type 的 relabelfrom/relabelto
+#   （private/ueventd.te:20-21）。所以正则能覆盖热插拔后才出现的唤醒源。
+#   匹配不到的 sysfs 路径 restorecon 不动它（核心策略只有精确的 `/sys` 一条），
+#   genfscon 打的标签不受影响。
+# ⚠️ 只匹配 `…/wakeup/wakeupN`，不会碰到每个设备的 `power/wakeup` 属性文件。
+# ✅ 2026-09-29 上机验证（v0.7.0，开机 2 小时后）：`ls -LZ /sys/class/wakeup/*/name` 50/50 是 sysfs_wakeup，
+#    包括 genfscon 没写到的 a400000 下的 xhci-hcd.2.auto 与键盘的 usb3/3-3。
+/sys/devices/platform/.*/wakeup/wakeup[0-9]+(/.*)?   u:object_r:sysfs_wakeup:s0
+
+# 手写笔（M-Pencil）：守护进程，与触摸从片驱动交出帧的节点（docs/dev/stylus.md）
+/vendor/bin/gk3pend          u:object_r:gk3pend_exec:s0
+# 麦克风降噪服务（denoise/，sepolicy/gk3denoise.te）
+/vendor/bin/gk3denoised      u:object_r:gk3denoise_exec:s0
+/dev/socket/gk3denoise       u:object_r:gk3denoise_socket:s0
+/dev/gk3_pen                 u:object_r:gaokun3_pen_device:s0
+# Gaokun3 FTE7001 candidate HAL and its private transport/storage.
+/vendor/bin/hw/android\.hardware\.biometrics\.fingerprint-service\.gaokun3 u:object_r:hal_fingerprint_default_exec:s0
+/dev/gaokun3_fpcmd u:object_r:gaokun3_fpcmd_device:s0
+/dev/gpiochip4 u:object_r:gaokun3_fp_gpio_device:s0

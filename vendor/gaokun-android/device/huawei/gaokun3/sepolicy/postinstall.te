@@ -1,0 +1,98 @@
+# A/B OTA 的 postinstall 钩子（bin/gaokun3-ota-postinstall.sh）。
+#
+# ★ 这里为什么是"给 AOSP 的域补规则"而不是"定义自己的域"：
+#   update_engine 把【新的】vendor 分区挂到 /postinstall 时，会把整块文件系统
+#   relabel 成 postinstall_file
+#   （system/sepolicy/private/update_engine_common.te:47），再由
+#   domain_auto_trans(update_engine_common, postinstall_file, postinstall)（同文件 :14）
+#   把脚本转进 postinstall 域。所以 vendor 的 file_contexts 给这个脚本打什么
+#   标签都没有意义 —— 挂载时会被整个盖掉。
+#   AOSP 自己也是这么设计的，public/postinstall.te:1-4 原话：
+#     "Extend the permissions in this domain to allow this program to access
+#      other files needed by the specific device on your device's sepolicy directory."
+#
+# ⚠️ 本机的 postinstall 干的事比一般设备重得多：它要挂 ESP、把刚刷好的那个槽
+#    的内核/ramdisk/dtb 铺上去、并把 boot.img 的 cmdline 同步进 BLS 启动项
+#    （见 bin/gaokun3-ota-postinstall.sh 与 #116 §17）。
+#    [TODO B3] 的自研 EFI 加载器做出来之后，整个脚本连同本文件一起退役。
+#
+# ⚠️★★ 设计约束（2026-09-29 第七轮审计）：postinstall 跑的是【新】vendor 里的脚本，
+#    但加载着的是【旧】槽的策略（update_engine_common.te:14 的 domain_auto_trans 发生在旧系统里）。
+#    ⇒ 一旦某一版是 enforcing，之后任何要新权限的 postinstall 改动都会被旧策略拒掉、
+#      OTA 回滚。规矩：本文件的新增要【比用到它的脚本早一版】发出去；
+#      第一个 enforcing 版本之前把脚本可能要的都补齐；发版前实测一次 enforcing → enforcing 的 OTA。
+
+# ── 挂 ESP ───────────────────────────────────────────────────────────────
+# mount(2) 要 sys_admin。vfat 属于 sdcard_type，被 domain.te:1987-2003 那条
+# "只有 init/vold/update_engine… 能 mount"的 neverallow 显式排除在外
+# （public/file.te:183 `type vfat, sdcard_type, fs_type, mlstrustedobject;`），
+# 所以这条写得进去 —— 与 hal_bootctl_default 那组同理。
+allow postinstall self:capability sys_admin;
+allow postinstall vfat:filesystem { mount unmount };
+# create：2026-09-29 第七轮审计补（不给 rmdir：脚本从不删目录）。`mkdir -p $DEST`（脚本 :82）在 slot_<x>/ 或 android/
+#   不存在时要 create，被拒 ⇒ fail ⇒ 整个 OTA 回滚（POSTINSTALL_OPTIONAL_vendor=false）。
+allow postinstall vfat:dir { search read open getattr write add_name remove_name create };
+allow postinstall vfat:file { create open read write getattr setattr rename unlink };
+
+# 挂载点 /mnt/gaokun3_ota_esp（以及探测用的 /mnt/gaokun3_esp_probe）。
+# /mnt 是 tmpfs（system/sepolicy/private/file_contexts:51）。
+allow postinstall tmpfs:dir { search getattr create write add_name mounton };
+
+# ── 块设备 ───────────────────────────────────────────────────────────────
+# by-name 下都是符号链接（block_device），指向的真实节点才是分区类型。
+# 脚本读 /dev/block/by-name/{esp,boot_a,boot_b}。
+allow postinstall block_device:dir search;
+allow postinstall block_device:lnk_file r_file_perms;
+# ⓘ 2026-09-29：file_contexts 改成按 by-name 别名标之后，by-name 链接也可能拿到分区类型
+#   （devices.cpp:606，mode 0 不看 -b）。读它们不用另写：核心 private/domain.te:70 给了
+#   `domain dev_type:lnk_file r_file_perms`。
+allow postinstall gaokun3_esp_block_device:blk_file rw_file_perms;
+# gaokun3-bootimg-extract 从刚刷好的那个槽解包（只读）。
+allow postinstall boot_block_device:blk_file r_file_perms;
+
+# ── 统一启动入口一节（2026-10-05，S9，脚本里的 gk3_deploy）：【故意不新增任何规则】─────────────
+# 它只用到上面已有的：读 /postinstall/boot/gk3boot/*（postinstall_file，private/postinstall.te:17-19）、
+# 在 ESP 上 mkdir（vfat:dir create）、写 .new / rename / unlink 条目（vfat:file 那一行）、cmp 读回、
+# getprop persist.vendor.gaokun3.gk3boot（vendor_gaokun3_props.te 的 get_prop(postinstall, …)）。
+# 撤除时【不删目录】（不要 vfat:dir rmdir），目录留给新槽开机完成时的 boot_control HAL 回收 ——
+# 正是因为本文件顶上那条约束：postinstall 跑在旧槽的策略下，新加的权限要晚一版才可用。
+
+# ── 不用写、已经现成的那些（核对过，免得下次又有人补一遍）──────────────
+#   * 执行 /system/bin/sh、toybox、以及同目录的 gaokun3-bootimg-extract：
+#     private/postinstall.te:22-25（shell_exec / system_file / toolbox_exec）
+#     与 :17-19（postinstall_file 的 rx / r_dir_perms）。
+#   * 往 update_engine 的管道打日志：同文件 :12-13。
+#   （A17 的 private/postinstall.te 行号：执行 :21-23、postinstall_file :16-18、管道 :11-12；规则本身没变，
+#    相对 crDroid 16.0（f2ea821）只多了 sysfs_fs_f2fs 两行（:35-36）；相对 refs/lineage-sepolicy（23.0）还少了
+#    otapreopt_chroot / otadexopt 那几行，crDroid 16.0 本来就没有，与本文件无关。update_engine_common.te 的 :14 / :47 在 A17 里还是那两行。）
+#   ⓘ A16 → A17 的那一次 OTA：跑的是 A17 vendor 里的脚本、用的是 A16 槽的策略（本文件顶上那条约束）。
+#     A17 迁移【没有】给本文件加任何规则，所以只要脚本也没加新动作，这一次不受影响。
+#   * `df` 看 ESP 剩余空间（statfs）：domain.te:276 `allow domain fs_type:filesystem getattr;`
+#     是全局的，不用为 vfat 单独写 getattr。
+#   * getprop persist.vendor.gaokun3.recovery_entry：⚠️ 2026-09-18 改名之后
+#     它不再是 default_prop（此前靠 private/coredomain.te:33 的
+#     `get_prop(coredomain, default_prop)` 白拿），而是我们自己的 vendor_gaokun3_prop。
+#     读权限现在【显式写在】sepolicy/vendor_gaokun3_props.te 里的
+#     `get_prop(postinstall, vendor_gaokun3_prop)` —— 少了那一行，OTA 会当成"没设过"
+#     而永远跳过 recovery 条目，且不报错。
+
+# ── ⚠️★★ 写不了、也不该在这里写的：find_esp 的兜底探测 ────────────────
+#
+# 脚本在 /dev/block/by-name/esp 不存在时（手工分区 / 双系统的用户，v0.6.0 有人
+# 真的踩到）会扫所有块设备，用 blkid 找 vfat 再试挂。那条路在 enforcing 下
+# 【不可能工作】：那些分区挂的是通用 block_device 标签，而
+#     system/sepolicy/private/domain.te:705
+#     neverallow { domain -kernel -init -recovery } block_device:blk_file { open read write };
+# 是加 allow 也绕不过去的（写了 sepolicy_neverallows 直接构建失败）。
+#
+# 后果要说清楚：转 enforcing 之后，**只有按安装器（installer/backend）的
+# 布局装的机器（p1=ESP）能走完 OTA 最后一步**；手工分区的机器会在
+# postinstall 失败，整次 OTA 回滚。这不是"少一条规则"，是布局假设变成了硬约束。
+# ★ 正解仍是 [TODO B3]：自研 EFI 加载器直接读 misc 选槽，postinstall 整个消失。
+
+# ── 只静音：toybox umount 卸完之后对块设备发 LOOP_CLR_FD（2026-09-30，#129）─────────
+# 证据（第七轮 ROM 装机时，旧策略、permissive）：
+#   `umount … ioctl  path="/dev/block/nvme0n1p1" ioctlcmd=0x4c01  postinstall → gaokun3_esp_block_device:blk_file`
+# 0x4c01 = LOOP_CLR_FD：toybox 的 umount 在 umount(2) 之后顺手试着释放 loop 设备。ESP 不是 loop，
+# 这个 ioctl 本来就会失败（ENXIO），被拒只是换成 EACCES —— 卸载那一步早已完成，脚本照常往下走。
+dontaudit postinstall gaokun3_esp_block_device:blk_file ioctl;

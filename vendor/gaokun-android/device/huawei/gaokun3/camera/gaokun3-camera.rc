@@ -1,0 +1,23 @@
+# ★ 2026-09-14：这里曾经有一段 `on boot` 把 camss 的 runtime PM 钉成 on ——
+#   那是 #87 电源域缺陷（titan_top_gdsc 塌缩过一次就再也上不了电）的【桥】。
+#   缺陷已在内核侧根治（patches/kernel/camera/0002：camcc 的 camnoc_axi/slow_ahb/fast_ahb 三个 RCG
+#   标成 shared，关闭时停靠 XO），见 docs/dev/camera.md。
+#   内核 #14 实测：解钉、自然塌缩、空闲后再用，全部成功 ⇒ 钉住撤掉，相机电源域按 runtime PM 正常起落。
+#   ⚠️ 这一撤【依赖内核带 0031】。如果有人把旧内核（#5 及更早）配上这份 rc，第二次开相机就会回到 #83。
+#   prebuilt-boot/ 里给 ROM 用的内核从 #14 起都带 0031。
+service vendor.camera-provider-gaokun3 /vendor/bin/hw/android.hardware.camera.provider-service.gaokun3
+    class hal
+    user cameraserver
+    group audio camera input drmrpc graphics media
+    ioprio rt 4
+    # libcamera 自己的日志默认走 stderr，对 init 服务等于丢弃。
+    # 留一条出口：管线和 IPA 的失败因果链很长，没有它根本查不动（见 #97）。
+    setenv LIBCAMERA_LOG_FILE /data/vendor/camera/libcamera.log
+    setenv LIBCAMERA_LOG_LEVELS *:INFO
+
+# ★ 2026-09-29（SELinux 第七轮审计）：日志目录以前从没有 rc 建过 —— 开发机上那个是 2026-09-12
+#   手建的。全新安装 / 恢复出厂后目录不存在，libcamera 静默回落到 stderr（= 丢弃），
+#   enforcing 下 HAL 自己也建不了（hal_camera_default 对 vendor_data_file 没有 add_name；DAC 上
+#   /data/vendor 是 0771 root）。由 vendor_init 建，标签按 file_contexts 取 gaokun3_camera_vendor_data_file。
+on post-fs-data
+    mkdir /data/vendor/camera 0770 cameraserver cameraserver

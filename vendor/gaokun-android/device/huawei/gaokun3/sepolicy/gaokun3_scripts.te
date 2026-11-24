@@ -1,0 +1,368 @@
+# gaokun3 自己的服务脚本：域定义
+#
+# ★ 这是 SELinux 转 enforcing（[TODO B1]）的【第 1 步】，按 #60 定下的顺序：
+#     1. 给我们的可执行文件定义域 + file_contexts   ← 本文件
+#     2. 给还是通用 `device` 标签的字符设备节点定类型
+#     3. hal_health_default / network_stack 要的 sysfs 子路径打标签
+#     4. 全部做完【重新普查一次】—— 只有那时的清单才能照抄成 allow 规则
+#
+# ⚠️ 所以本文件【刻意不含】任何从 denial 日志抄来的 allow 规则。
+#    #60 已经证明：在定义域之前，那些 denial 的 scontext 全是 u:r:init:s0，
+#    照着它们写出来的规则挂在错误的主体上，是错的。
+#    这里只有"域存在"和"能执行自己的解释器"这两件结构性的事。
+#
+# ⚠️ 全系统仍是 permissive。加了域不会让任何东西坏掉（permissive 只记录不拦），
+#    但会让下一次普查的 scontext 变成真实主体 —— 那才是第 4 步的前提。
+
+# ── audio-route.sh：开机把混音器路由设好 ────────────────────────────────
+type gaokun3_audioroute, domain;
+type gaokun3_audioroute_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_audioroute)
+
+# ── smmu-nostall.sh：GPU SMMU stall 解锁器，常驻轮询 ─────────────────────
+# （TODO B6 根治之后这个域就可以删掉）
+type gaokun3_smmustall, domain;
+type gaokun3_smmustall_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_smmustall)
+# v1.0 LIVE-4（2026-10-05）：每轮先读 GPU 的 runtime_status，suspended 时退避到 1 秒一轮。
+#   /sys/devices/platform/soc@0/3d00000.gpu/power/runtime_status 实机标签 u:object_r:sysfs:s0（ls -Z 核过）。
+#   读不到时脚本退回原来的 10 Hz（不会更差），所以 enforcing 下漏了这条只是没省电、不坏功能。⬜ 未编译、未上机。
+r_dir_file(gaokun3_smmustall, sysfs)
+
+# ── gaokun3-hangdump.sh：死锁取证看门狗 ─────────────────────────────────
+type gaokun3_hangdump, domain;
+type gaokun3_hangdump_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_hangdump)
+
+# ── gaokun3-keyboard.sh：键盘开关 ───────────────────────────────────────
+type gaokun3_keyboard, domain;
+type gaokun3_keyboard_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_keyboard)
+
+# ── gaokun3-usbrole.sh：息屏切 host / 亮屏切 device（s2idle 那半边）─────
+type gaokun3_usbrole, domain;
+type gaokun3_usbrole_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_usbrole)
+
+# ── gaokun3-touch-mode.sh：触摸手感预设（game / daily）──────────────────
+# ⚠️★ 2026-09-18 补的。v0.6.2 加这个服务时【整个漏了域这一步】，于是它一直
+#    跑在 init 域里 —— permissive 下手感一切正常，所以两版都没暴露。
+#    ★ 教训：第 1 步不是一次性的工序，是【每加一个 init 服务都要走一遍】的
+#      清单项。判据：`adb shell ps -AZ | grep -v u:r:init:s0` 里该有它。
+type gaokun3_touchmode, domain;
+type gaokun3_touchmode_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_touchmode)
+
+# ── gaokun3-rproc-kick.sh：只给不在运行的 DSP 补 start（#118 §3，2026-09-24）─
+type gaokun3_rprockick, domain;
+type gaokun3_rprockick_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_rprockick)
+
+# ── 每个脚本域都要能执行自己的解释器 ────────────────────────────────────
+#
+# 这不是"从 denial 抄来的规则"，是结构性事实：这六个脚本的 shebang 都是
+# `#!/vendor/bin/sh`（已逐个核对），而脚本里用的 sed/grep/cat 等来自
+# toybox_vendor。少了这两条，enforcing 下服务连启动都做不到。
+# 类型名出处（2026-09-18 对着 lineage-23.0 重新核过，此前这里写的 vendor/file.te
+# 是错的 —— 那两个类型在 public/ 里，vendor 策略能引用它们正是因为这一点）：
+#   system/sepolicy/public/vendor_shell.te:2
+#     type vendor_shell_exec,   exec_type, vendor_file_type, file_type;
+#   system/sepolicy/public/vendor_toolbox.te:4
+#     type vendor_toolbox_exec, exec_type, vendor_file_type, file_type;
+# 打标签的是核心策略自己：private/file_contexts:424-425
+#   /(vendor|system/vendor)/bin/sh            u:object_r:vendor_shell_exec:s0
+#   /(vendor|system/vendor)/bin/toybox_vendor u:object_r:vendor_toolbox_exec:s0
+# 显式写全，不用 m4 宏 —— 十行重复远比"一个只在本文件里定义的宏"好读，
+# 也不会因为策略文件的拼接顺序出意外。（2026-09-18 起是六个：加了 touch-mode。）
+allow gaokun3_audioroute vendor_shell_exec:file rx_file_perms;
+allow gaokun3_audioroute vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_smmustall  vendor_shell_exec:file rx_file_perms;
+allow gaokun3_smmustall  vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_hangdump   vendor_shell_exec:file rx_file_perms;
+allow gaokun3_hangdump   vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_keyboard   vendor_shell_exec:file rx_file_perms;
+allow gaokun3_keyboard   vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_usbrole    vendor_shell_exec:file rx_file_perms;
+allow gaokun3_usbrole    vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_touchmode  vendor_shell_exec:file rx_file_perms;
+allow gaokun3_touchmode  vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_rprockick  vendor_shell_exec:file rx_file_perms;
+allow gaokun3_rprockick  vendor_toolbox_exec:file rx_file_perms;
+
+# ── 第 4 步：照实机拒绝补的规则 ──────────────────────────────────────────
+
+# gaokun3-keyboard.sh：枚举 /sys/class/input/*，读 input*/name 找到键盘，
+# 再写 inhibited 开关它。路径遍布 USB HID 与 pmic 两棵子树，
+# 逐条 genfscon 不现实（设备号是动态的），所以按类型给。
+# ⚠️ 这个域只做这一件事，给 sysfs 读写的面虽然宽，但域本身很小。
+allow gaokun3_keyboard sysfs:dir r_dir_perms;
+allow gaokun3_keyboard sysfs:file rw_file_perms;
+
+# gaokun3-touch-mode.sh：按 `for d in /sys/bus/spi/devices/*/algo` 找触摸驱动的
+# algo 目录，再写 track_smoothing / track_start_debounce / debounce_base /
+# track_jump_dist2 / pressure_enabled 五项（并逐项回读校验）。
+#   * dir r_dir_perms —— 通配要 readdir。全局只给了 search
+#     （system/sepolicy/private/domain.te:255），不够。
+#   * file rw_file_perms —— 写 algo 属性 + 回读。
+#   * 路径上的 /sys/bus/spi/devices/spi0.0 是符号链接，但 lnk_file 读全局已有
+#     （domain.te:197 `allow domain sysfs:lnk_file { getattr read }`），不用写。
+#   * 脚本里的 `log` 也不用写：write_logd(domain) 是全局的（domain.te:121）。
+# ⚠️ 与 keyboard 同样的取舍：sysfs 的面给得宽，但域本身只做这一件事。
+#    ★ 不写死那条 DT 路径是【故意的】（见脚本注释）；反过来说，这里也就没法
+#      用 genfscon 收窄到那一个 algo 目录 —— 收窄要等驱动把 algo 挪到一个
+#      稳定路径下，或者接受"换内核就失效且毫无征兆"。
+allow gaokun3_touchmode sysfs:dir r_dir_perms;
+allow gaokun3_touchmode sysfs:file rw_file_perms;
+
+# ⚠️ 下面两组是 2026-09-24 按【实机 ls -Z 的标签】写的，还没经过 enforcing 下的普查
+#    （本机当时是 permissive、且新服务要等下一版镜像才有），属于第 4 步的"先写后验"。
+# gaokun3-rproc-kick.sh：读 /sys/class/remoteproc/*/{state,name}，必要时写 state。
+#   实机标签：…/2400000.remoteproc/remoteproc/remoteproc0/state = u:object_r:sysfs:s0
+allow gaokun3_rprockick sysfs:dir r_dir_perms;
+allow gaokun3_rprockick sysfs:file rw_file_perms;
+# gaokun3-usbrole.sh（host/device；follow 模式已交给 USB 端口 HAL，见 hal_usb_default.te）：
+#   写 usb_role 的 role、读 UDC state、列 xhci-hcd.*/usb* 与 driver 链接，
+#   以及 /sys/power/wake_lock|wake_unlock。实机标签：role / udc state 全是 sysfs，
+#   wake_lock 是 sysfs_wake_lock。属性：persist.vendor.gaokun3.allow_suspend 是
+#   vendor_gaokun3_prop（要显式 get_prop）；debug.tracing.screen_state 是 debug_prop
+#   （核心策略已给所有域：private/domain.te:485，不用写）。
+#   ⚠️ 此前这个域【一条 sysfs 规则都没有】—— enforcing 下连 role 都写不了。
+allow gaokun3_usbrole sysfs:dir r_dir_perms;
+allow gaokun3_usbrole sysfs:file rw_file_perms;
+allow gaokun3_usbrole sysfs_wake_lock:file rw_file_perms;
+get_prop(gaokun3_usbrole, vendor_gaokun3_prop)
+# ★ 2026-09-27 运行期 enforcing 试跑补的两条（#126）：
+#   1. /sys/class/udc 是 sysfs_udc（核心策略 genfscon），读 UDC state 要穿过它
+#      （当时是 follow 模式；现在是 host 模式的 host_attached）。
+#      试跑里被拒 3 次 ⇒ 守护进程以为"没被主机枚举"，6 秒后切 host、再判成纯充电器停在 host
+#      ⇒ **USB adb 当场掉线**，回 permissive 后也不会自己恢复（settled 要等拔线）。
+#   2. 切 device 之前要拿 wakelock（"device 模式不挂起"的不变量，#52），写 wake_lock 要
+#      CAP_BLOCK_SUSPEND —— 这一条在开机日志里从没出现过，因为守护进程开机时不切角色；
+#      试跑后重启服务、它切回 device 的那一下才露出来。拿不到锁 ⇒ device 模式下可能挂起 ⇒ 整板复位。
+r_dir_file(gaokun3_usbrole, sysfs_udc)
+allow gaokun3_usbrole self:global_capability2_class_set block_suspend;
+# ★ v1.0（PWR-4 止损）：切 host 失败时 setprop vendor.gaokun3.usbrole.broken 1、成功时清 0。
+#   属性落在 vendor_gaokun3_prop（property_contexts 的 `vendor.gaokun3.` 前缀，不用新增上下文）；
+#   gaokun3_usbrole 是 vendor 域，不撞 private/property.te:492-502（lineage-sepolicy）"coredomain 不许设 vendor 属性"那条 neverallow。
+#   set_prop 已含上面的 get_prop（public/te_macros:393-397），那行留着不动。⬜ 未上机、未编译。
+set_prop(gaokun3_usbrole, vendor_gaokun3_prop)
+# 拔线检测（gaokun3-usbrole.sh 的 vbus_present()）读 EC 的适配器在线标志
+#   /sys/class/power_supply/gaokun-ec-adapter/online。真实节点在 huawei_gaokun_ec.psy.0/power_supply 下，
+#   由 genfs_contexts:17 标成 sysfs_batteryinfo；/sys/class/power_supply 目录和其中的链接是 sysfs，与读 usb_role 时
+#   走的链接一样，原本就能穿过。
+#   对 sysfs_batteryinfo 的 neverallow 只限 coredomain（见 hal_lineage_health_default.te 的核对），本域是 vendor 域。
+r_dir_file(gaokun3_usbrole, sysfs_batteryinfo)
+
+# ── audio-route.sh：2026-09-18 实机重跑一次这个服务抓到的完整清单 ────────────
+#
+# ★ 方法：`setprop ctl.start audioroute` 之前记下 dmesg 里 avc 的行数，重跑之后
+#   只看新增的几行。比"翻整次启动的日志"干净得多，而且这个服务是幂等的
+#   （只写混音器、不出声），代价为零。★ 这招适用于任何 oneshot 服务。
+#
+# 混音器控制节点：脚本自己先 `[ -e /dev/snd/controlC0 ]` 等声卡就绪（dir search +
+# getattr），tinymix 再真正开它读写（read write，实测两条都被拒过）。
+# ⚠️ 给 rw_file_perms 而不是 { read write }：tinymix 走 ioctl 下发控件值，
+#    而 ioctl 在 r_file_perms 里 —— 只给 read/write 会在 enforcing 下卡在 ioctl。
+allow gaokun3_audioroute audio_device:dir r_dir_perms;
+allow gaokun3_audioroute audio_device:chr_file rw_file_perms;
+
+# ⚠️★★ tinymix 在 /system/bin 里，而 Treble 有一条 neverallow 禁止 vendor 域
+#    碰 system_file_type 的【任何】权限（domain.te:1238-1275 那条 `}:file *;`，
+#    豁免名单里只有 shell_exec / toolbox_exec 等几个）。
+#    所以这不是"加一条 allow"就完的事：必须先挂上 AOSP 为这种情况准备的属性
+#    vendor_executes_system_violators（public/attributes:266）。
+#
+# ★ 为什么不走"把 tinymix 放进 /vendor/bin"那条路：external/tinyalsa 的
+#   Android.bp 里 libtinyalsa 是 vendor_available: true，但 tinymix 自己只是个
+#   普通 cc_binary（android-16.0.0_r4 的 Android.bp:66-71，没有 vendor_available）
+#   —— 也就是说 AOSP 根本没有 tinymix 的 vendor 变体可装。
+#   device.mk:229 记着的那个坑（"放进 /vendor/bin 但 .so 在 /system"）就是这么来的。
+#   要干净解决得改 external/tinyalsa 加一个 vendor 变体，那是【树外补丁】，
+#   而本仓已经被"构建机的树 ≠ 本仓 checkout"咬过五次。两害相权，选属性。
+# ⬜ 如果哪天给 tinyalsa 投了那个 vendor 变体的补丁并进了构建配方，
+#    这三行就可以一起删掉 —— 判据：/vendor/bin/tinymix 存在（脚本第 33 行已经
+#    在找它了，一存在就自动切过去）。
+# ⓘ A17（2026-10-25 核对）：上面"AOSP 没有 vendor 变体"的前提变了 —— crDroid 17.0 清单里
+#    external/tinyalsa 换成了 LineageOS/android_external_tinyalsa@lineage-24.0（28a6a6b "Mark tiny-tools
+#    vendor_available"），它的 Android.bp:68-74 给 tinymix 写了 vendor_available: true。也就是说不用树外补丁
+#    就能装 /vendor/bin/tinymix 了。但这三行【现在还不能删】：
+#      ① device.mk 还没装 vendor 变体（PRODUCT_PACKAGES 里列的是 tinymix，装的是 /system/bin 那个；
+#         vendor 变体的模块名按 Soong 惯例应是 tinymix.vendor ——⬜ 未在构建里验证）；
+#      ② 更正上面那句：audio-route.sh:32-33 是【先】找 /system/bin/tinymix、找不到才用 /vendor/bin 的，
+#         两个都在时不会"自动切过去"，要把顺序对调。
+#    两件事做完、上机确认 ps -AZ 里 audioroute 没有 system_file 的 execute_no_trans 之后，删这三行和这一整段。
+typeattribute gaokun3_audioroute vendor_executes_system_violators;
+allow gaokun3_audioroute system_file:file rx_file_perms;
+allow gaokun3_audioroute system_file:file execute_no_trans;
+
+# 2026-10-26（patches/kernel/audio/0007–0008、patches/kernel/dts/0016）：脚本用 `[ -e ]` 看右功放有没有 qcom,port-mapping，
+#   /sys/firmware/devicetree/base/soc@0/soundwire@3250000/wsa8830-right@0,2/qcom,port-mapping，
+#   实机标签 u:object_r:sysfs:s0（ls -Z 核过）。只要 stat：目录的 search 全局已有
+#   （private/domain.te:255），文件给 getattr 就够。被拒时脚本按旧内核处理（VISENSE 1、数字 84），
+#   在新内核上就是大音量总线冲突，所以这条不能漏。⬜ 未编译、未经 enforcing 普查。
+allow gaokun3_audioroute sysfs:file getattr;
+
+# 扬声器的数字音量基准（audio-route.sh 设完混音器后写 vendor.gaokun3.audioroute.spkdig，
+#   vendor_gaokun3_prop）：音频 HAL 里的 speakerfx 借余量、补偿、放回都以它为准，没有它就不碰混音器。
+#   gaokun3_audioroute 不是 coredomain，拦 coredomain 写 vendor 属性的那条 neverallow 管不到它
+#   （同 gaokun3_usbrole）。⬜ 未编译、未上机。
+set_prop(gaokun3_audioroute, vendor_gaokun3_prop)
+
+# ── ⚠️ 故意【不写】的两个域（2026-09-18）—— ★ 2026-09-27 起两个都写了，见本文件末尾（#126）──
+#
+# gaokun3_smmustall：实测要 `self:capability sys_rawio` +
+#   `gaokun3_devmem_device:chr_file {map open read write}`。
+#   那条 sys_rawio 的 neverallow 带 userdebug_or_eng 豁免
+#   （lineage-23.0 的 domain.te:2012-2024；⚠️ 行号每次同步都会漂，
+#    判据是那条 neverallow 的正文里有没有 `userdebug_or_eng(\`-domain')`）。
+#   ⚠️★★ 2026-09-18 我在这里写过一条"更正"，说本仓发的是 user 变体所以豁免不生效
+#   —— **那条更正本身是错的，当晚就被实机推翻了**。
+#   `ro.build.type=user` / `ro.debuggable=0` 是 build.prop 被硬写成那样的
+#   （`build/soong/scripts/gen_build_prop.py:28` 的 get_build_variant() 没有
+#    userdebug 这一档，非 eng 一律按 user 写），**与真实构建变体无关**。
+#   本仓一直编的是 userdebug（A16 时 `lineage_gaokun3-bp4a-userdebug`；A17 起
+#   `lineage_gaokun3-cp2a-userdebug`，`AndroidProducts.mk:8`），
+#   所以 userdebug 豁免【是生效的】（A17 的 private/domain.te:2120-2133 仍带 `userdebug_or_eng(\`-domain')`）—— 原话"写得进去，但那意味着 enforcing 与否
+#   取决于构建变体"仍然成立。
+#   ★ 正解是把 [TODO B6] 做掉（DT 中断映射修对），这个轮询脚本整个消失。
+#   在那之前，宁可让它在 enforcing 下明确失效，也不要写一条只在
+#   userdebug 上成立的规则。
+#   ⚠️★ 2026-09-27 改了主意（#126），规则写在本文件末尾：
+#   "明确失效"在这里的意思是【第一次 GPU 页错误就永久卡死、无法自愈】（device.mk 装它那一节），
+#   而那条顾虑"只在 userdebug 上成立"在实际中不存在 —— user 变体本来就起不来（#117 §15），
+#   本仓只编 userdebug。不写规则 = enforcing 下拆掉 GPU 的安全网；写了 = 与今天 permissive 下
+#   的行为一模一样。B6 仍是根治，做掉之后这几行连同脚本一起删。
+#
+# gaokun3_hangdump：⚠️ 下面这段是 2026-09-18 的判断，2026-09-27 改了主意（见本文件末尾）：
+#   实测要读别的域的 /proc（观测到 init 与 kernel，
+#   而它的职责是扫【所有】线程找 D 状态，所以实际需要 domain:file r_file_perms）。
+#   ⚠️ 再加上 debugfs 那条【没有 userdebug 豁免】的 neverallow
+#   （lineage-23.0 的 domain.te:1462
+#    `neverallow { domain -init -vendor_init -dumpstate } debugfs:{ file lnk_file } no_rw_file_perms;`
+#    —— 名单里只有三个域，没有任何构建变体豁免），
+#   这个工具本质上是 dumpstate 那一类特权取证工具。
+#   给它半套权限，结果是"能跑但会漏进程"——**比明确不可用更糟**。
+#   出路：要么把 binder-debugfs 部分换成 dumpsys，要么做成只在
+#   userdebug 上启用的诊断件。见 #75。
+#   ★ 2026-09-27 重新看脚本：它【不】扫所有线程 —— 只看 4 个固定进程（watched_pids）。
+#     那 32 类 denial 全是 `pidof` 顺手读了每个进程的 cmdline。所以"半套权限会漏进程"不成立。
+
+# ── gaokun3-hangdump.sh：拆成"看门狗"与"取证"两半，各给各的（2026-09-27，#126）─────────
+#
+# 看门狗（每 60 秒一次）：pidof 找 4 个进程 → 读它们 /proc/<pid>/task/*/stat 看有没有线程卡在 D。
+#   * 只给这 4 个域的 /proc 读权限（audioserver / com.android.bluetooth / 蓝牙 HAL / hexagonrpcd）。
+#   * pidof 会顺手读【每个】进程的 cmdline —— 那是 permissive 下每分钟一批 denial 的来源，
+#     enforcing 下读不到的进程它直接跳过，结果不变。静音，不放行。
+#   * sys_ptrace：root 读别的 uid 进程的 /proc/<pid>/wchan、exe 要过 ptrace_may_access 的 uid 检查。
+#     D 状态检测本身不需要它（task/*/stat 走 PTRACE_MODE_NOAUDIT，读不到只是 wchan 等字段清零）。
+#     ✗ 放行不了：private/domain.te:1681-1691 的 neverallow 只豁免 vold / dumpstate / storaged /
+#       system_server（加几个 userdebug 的），vendor 域一个都没有。2026-09-27 第一版写了 allow，
+#       sepolicy_neverallows 当场打回 —— 我之前 grep 单行没抓到这条多行的规则。
+#     ⇒ enforcing 下取证拿不到跨 uid 的 wchan（01-stuck-threads.txt 里那一行会是 0），静音。
+r_dir_file(gaokun3_hangdump, { audioserver bluetooth hal_bluetooth_default hal_audio_default hexagonrpcd })
+dontaudit gaokun3_hangdump domain:dir search;
+dontaudit gaokun3_hangdump domain:file { read open };
+dontaudit gaokun3_hangdump self:global_capability_class_set sys_ptrace;
+
+# 取证（整个开机只触发一次，写 /data/vendor/gaokun3/hangdump-<uptime>/）：
+#   * dmesg：kernel:system syslog_read（非应用域没有禁令，bootstat.te:33 同款）
+#   * /proc/asound/card0/pcm*/sub0/status
+#   * binder：只读 /dev/binderfs/binder_logs/state（所有进程的 binder 线程与挂起事务，查死锁要的正是它）。
+#     它是 binderfs_logs，只在 userdebug 上可读（private/domain.te:739 的豁免）——本机只编 userdebug。
+#     transactions / failed_transaction_log 在 domain.te:558-568 里只许 dumpstate / system_server 等读，拿不到；
+#     debugfs 那条回退路径没有任何豁免，脚本已删。
+#   * 写取证目录：/data/vendor/gaokun3 是 hangdump.rc 建的，标签就是 vendor_data_file（实机核过）。
+#   * gaokun3-qrtr-lookup：⚠️ 2026-09-29 更正 —— 原先说"执行权限核心已给"是错的：domain.te:188 给非 coredomain
+#     的 vendor_file 只有 { read open getattr execute map }，【没有 execute_no_trans】，不做域转换地执行它会被拒
+#     （policy-query DENY）。现在给它专用类型、只放行这一个文件（file_contexts）。要一个 QRTR socket
+#     （与 hal_sensors_default.te 同款权限）。
+#   * /proc/uptime（取证目录名、摘要）：proc_uptime，此前没给 ⇒ 目录会叫 "hangdump-"。
+#   ✗ 做不到、脚本已删的：logcat（/system/bin/logcat 是 logcat_exec，vendor 域执行 system 文件被 Treble
+#     neverallow 禁）、dumpsys（要 /dev/binder，vendor 域同样被禁）、/proc/<tid>/stack（要 ptrace attach）。
+allow gaokun3_hangdump kernel:system syslog_read;
+allow gaokun3_hangdump proc_asound:dir r_dir_perms;
+allow gaokun3_hangdump proc_asound:file r_file_perms;
+userdebug_or_eng(`
+  allow gaokun3_hangdump binderfs:dir search;
+  allow gaokun3_hangdump binderfs_logs:dir r_dir_perms;
+  allow gaokun3_hangdump binderfs_logs:file r_file_perms;
+')
+allow gaokun3_hangdump vendor_data_file:dir create_dir_perms;
+allow gaokun3_hangdump vendor_data_file:file create_file_perms;
+allow gaokun3_hangdump self:qipcrtr_socket { create getattr read write };
+type gaokun3_qrtr_lookup_exec, vendor_file_type, file_type;
+allow gaokun3_hangdump gaokun3_qrtr_lookup_exec:file rx_file_perms;
+allow gaokun3_hangdump proc_uptime:file r_file_perms;
+# v1.0 AV-6（2026-10-05）：remoteproc 状态签名。实机标签（ls -Z 核过）：
+#   /sys/class/remoteproc/remoteprocN/{name,state} = sysfs；/proc/interrupts = proc_interrupts。
+#   PCM 探针的 .pcm-probe / rproc-events.log 写在 /data/vendor/gaokun3（vendor_data_file，上面已给 create_file_perms，
+#   含 rename / unlink —— mv -f 与 rm -f 要用）。⬜ 未编译、未上机。
+r_dir_file(gaokun3_hangdump, sysfs)
+allow gaokun3_hangdump proc_interrupts:file r_file_perms;
+
+# ── gaokun3-smmu-nostall.sh：只在 userdebug / eng 上放行（2026-09-27，#126）──────────
+# 证据：`gaokun3_smmustall gaokun3_devmem_device:chr_file { read open map write }` 与
+#   `self:capability sys_rawio`（enforcing 试跑里 3 分钟被拒 481 次 —— 它每 0.1 秒轮询一次）。
+# sys_rawio 的 neverallow 带 userdebug_or_eng(`-domain') 豁免，所以必须包在 userdebug_or_eng 里，
+# 否则 user 变体的 sepolicy_neverallows 会失败。/dev/mem 的类型是我们自己的（device.te），没有核心禁令。
+# ⚠️ 这是在 enforcing 下保住现状，不是认可这种做法：用户态经 /dev/mem 改 SMMU 寄存器
+#    本身就是 B6 没做完的症状。理由见本文件"故意不写的两个域"一节的 2026-09-27 补注。
+userdebug_or_eng(`
+  allow gaokun3_smmustall self:global_capability_class_set sys_rawio;
+  allow gaokun3_smmustall gaokun3_devmem_device:chr_file { open read write map };
+')
+
+# ── gaokun3-wlan-ap.sh：开机给热点预建 wlan1（v1.0 NET-2，2026-10-05）────────────
+# ⚠️ 先写后验：按源码推出来的，还没上过机、没经过 enforcing 普查。
+#   * shebang /vendor/bin/sh + toybox（等待循环里的 sleep / cat）—— 同上面七个脚本域。
+#   * 执行 /vendor/bin/iw（iw_vendor）：核心策略没给它标签（只标了 /system/bin/iw，
+#     private/file_contexts:291）⇒ 是 vendor_file，在本域里直接执行（不转域）。
+#   * iw 走 nl80211（generic netlink）发 NEW_INTERFACE，内核要 CAP_NET_ADMIN（rc 里 capabilities NET_ADMIN）。
+#   * iw 解析 "dev wlan0" 用 if_nametoindex：bionic 开一个 AF_INET/SOCK_DGRAM 套接字做 ioctl SIOCGIFINDEX
+#     （bionic/libc/bionic/net_if.cpp:66-69；宏在 system/sepolicy/public/ioctl_defines:1892）。
+#   * 读 /sys/class/net/wlan{0,1}（符号链接指到 pcie 那支的 net/ 目录，genfs_contexts 已标 sysfs_net）。
+type gaokun3_wlanap, domain;
+type gaokun3_wlanap_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_wlanap)
+allow gaokun3_wlanap vendor_shell_exec:file rx_file_perms;
+allow gaokun3_wlanap vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_wlanap vendor_file:file rx_file_perms;
+allow gaokun3_wlanap self:global_capability_class_set net_admin;
+allow gaokun3_wlanap self:netlink_generic_socket create_socket_perms_no_ioctl;
+allow gaokun3_wlanap self:udp_socket { create ioctl };
+allowxperm gaokun3_wlanap self:udp_socket ioctl SIOCGIFINDEX;
+r_dir_file(gaokun3_wlanap, sysfs_net)
+# v1.0 NET-4（2026-10-06）：开机把 wlan0 改成由 SoC 序列号派生的稳定 MAC。
+#   * 读 /sys/devices/soc0/serial_number —— 实机标签 u:object_r:sysfs:s0（ls -Z 核过）；/sys/class/net/wlan0/flags 在 sysfs_net（上面已给）。
+#   * /vendor/bin/ifconfig（toybox_vendor）`hw ether`：先 SIOCGIFFLAGS 看状态，再 SIOCSIFHWADDR 写地址
+#     （宏在 public/ioctl_defines:1888 / :1995）。只在 wlan0 还 down 时写，所以不需要 SIOCSIFFLAGS。
+#   ⬜ 先写后验：未经 enforcing 普查。
+r_dir_file(gaokun3_wlanap, sysfs)
+allowxperm gaokun3_wlanap self:udp_socket ioctl { SIOCGIFFLAGS SIOCSIFHWADDR };
+
+# ── gaokun3-wifi-wake.sh：按推送连接的服务器地址给 Wi-Fi 设收包唤醒规则（2026-11-04）──────────
+# ⚠️ 先写后验：按源码推出来的，没有经过 ROM 构建、没有在 enforcing 下上机。原型是 KernelSU 模块，跑在 ksu 域里。
+#   * shebang /vendor/bin/sh + toybox（cat / sleep / log）—— 同上面的脚本域。
+#   * 执行 /vendor/bin/iw（vendor_file，同 gaokun3_wlanap）。nl80211 SET_WOWLAN 要 CAP_NET_ADMIN（rc 里 capabilities NET_ADMIN）；
+#     用的是 "iw phy <名字>"，不解析接口名，所以不需要 gaokun3_wlanap 那个 AF_INET 套接字。
+#     iw 按名字找 phy 时读 /sys/class/ieee80211/phyN/index（sysfs）。
+#   * 读 /proc/net/tcp、/proc/net/tcp6 找推送连接：proc_net_tcp_udp（system/sepolicy/private/genfs_contexts:30），
+#     核心策略只禁应用域读它（private/app.te:794）。/proc/net 的目录查找所有域都有（private/domain.te:26）。
+#   * 读 /proc/uptime：proc_uptime（private/genfs_contexts:113）。
+#   * 读 /sys/bus/pci/drivers/ath11k_pci/<设备>/wakeup/wakeupN/{name,event_count} 找 ath11k_wow 唤醒源：驱动目录、
+#     指向 PCI 设备的链接和设备目录都是 sysfs，wakeupN 由本仓 file_contexts 的唤醒源正则标成 sysfs_wakeup。
+#     不扫 /sys/class/wakeup：那里有的唤醒源在本域读不了的目录里（EC 的 power_supply 是 sysfs_batteryinfo），每次都会报拒绝。
+#   * 读 /sys/class/net/wlan0/phy80211/name：sysfs_net，链接指向的 ieee80211/phy0 是 sysfs。
+type gaokun3_wifiwake, domain;
+type gaokun3_wifiwake_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(gaokun3_wifiwake)
+allow gaokun3_wifiwake vendor_shell_exec:file rx_file_perms;
+allow gaokun3_wifiwake vendor_toolbox_exec:file rx_file_perms;
+allow gaokun3_wifiwake vendor_file:file rx_file_perms;
+allow gaokun3_wifiwake self:global_capability_class_set net_admin;
+allow gaokun3_wifiwake self:netlink_generic_socket create_socket_perms_no_ioctl;
+allow gaokun3_wifiwake proc_net_tcp_udp:file r_file_perms;
+allow gaokun3_wifiwake proc_uptime:file r_file_perms;
+r_dir_file(gaokun3_wifiwake, sysfs_wakeup)
+r_dir_file(gaokun3_wifiwake, sysfs_net)
+r_dir_file(gaokun3_wifiwake, sysfs)

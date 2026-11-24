@@ -1,0 +1,34 @@
+From: Akisaira <akisaira@outlook.com>
+Subject: [PATCH] libcamera: ipa: libipa: add CameraSensorHelper for Hynix Hi-846
+
+Add a CameraSensorHelper implementation for the Hynix Hi-846 front camera sensor
+with its linear analogue gain model (gain = 1 + code / 16) and 10-bit black
+level pedestal (64 at 10-bit, scaled to 4096 in 16-bit units) so the software
+ISP AGC can control sensor analogue gain.
+
+Origin: local
+Upstream-Status: Pending
+---
+diff --git a/src/ipa/libipa/camera_sensor_helper.cpp b/src/ipa/libipa/camera_sensor_helper.cpp
+index c00b997..ea474ad 100644
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -520,6 +520,18 @@ public:
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("gc08a3", CameraSensorHelperGc08a3)
+ 
++class CameraSensorHelperHi846 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperHi846()
++	{
++		/* From measurement on a MateBook E Go (sc8280xp): 64 at 10bits. */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 16, 0, 16 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("hi846", CameraSensorHelperHi846)
++
+ class CameraSensorHelperHm1246 : public CameraSensorHelper
+ {
+ public:

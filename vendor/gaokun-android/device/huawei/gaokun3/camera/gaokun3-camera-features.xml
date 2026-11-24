@@ -1,0 +1,33 @@
+<!--
+    Android 的"本机有没有相机"【不是自动探测的】，靠这份 feature 声明。
+    ⚠️★ 没有它的症状极具误导性：相机 HAL 一切正常、`dumpsys media.camera`
+       也报 "Number of camera devices: 1"，但**相机应用连启动项都没有**
+       （`pm list features | grep camera` 一条都没有 ⇒ 应用的
+       `<uses-feature android:required="true">` 判定本机无相机）。
+
+    ⚠️ 故意【不】声明 android.hardware.camera.level.full：
+       本 HAL 的 ANDROID_INFO_SUPPORTED_HARDWARE_LEVEL 报的是 LIMITED
+       （见 camera/Metadata.cpp）。声明 full 会让应用期待它做不到的能力
+       （手动曝光、全同步…），失败得莫名其妙。两处要一致。
+-->
+<permissions>
+    <feature name="android.hardware.camera.any" />
+    <feature name="android.hardware.camera.front" />
+    <!-- 后摄（android.hardware.camera 这个名字就是"后置相机"，#106）与它的闪光灯（#111）。
+         ⚠️ 闪光灯这条不是装饰：SystemUI 的 FlashlightControllerImpl 先查
+         PackageManager.FEATURE_CAMERA_FLASH，没有它快捷设置里根本不会出现手电筒砖 ——
+         HAL 报了 FLASH_INFO_AVAILABLE=TRUE 也没用（2026-09-14 实机：mCameraId=null）。
+         ⚠️ 2026-09-24：PR #6 删上一版的"不声明 autofocus"那行时把这条注释的结尾也删了，
+            下面两条 feature 被吞进注释、下一个注释开头的双连字符又让整份 XML 解析失败
+            （构建期 systemfeatures-gen-tool 直接报错）。sync-device-tree.sh 现在会先校验 XML。 -->
+    <feature name="android.hardware.camera" />
+    <feature name="android.hardware.camera.flash" />
+    <!-- 自动对焦（2026-09-20 新增）：后摄有 dw9714 VCM，HAL 自实现 CDAF
+         （见 camera/AutoFocus.cpp + Lens.cpp）。
+         ⚠️ 与 Metadata.cpp 的声明必须成对一致：AF_AVAILABLE_MODES 里要有非 OFF 值，
+         且 LENS_INFO_MINIMUM_FOCUS_DISTANCE > 0。只改一边的症状是"应用要么根本不
+         试对焦、要么一直等一个不会到来的 FOCUSED_LOCKED"。
+         ⚠️ 这条 feature 是【整机粒度】的（没有 per-camera 版本）：前摄 hi846 无马达，
+         照样会有这条声明 —— 应用侧靠各相机自己的 min focus distance 区分是哪台。 -->
+    <feature name="android.hardware.camera.autofocus" />
+</permissions>

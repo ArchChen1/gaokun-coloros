@@ -1,0 +1,82 @@
+From b0f65dd2e579cbf67f187be40d11bfcd261de58b Mon Sep 17 00:00:00 2001
+From: ego <ego@local>
+Date: Mon, 23 Nov 2026 21:37:50 +0800
+Subject: [PATCH] =?UTF-8?q?EGO:=20ESP=20=E5=90=AF=E5=8A=A8=E9=A1=B9?=
+ =?UTF-8?q?=E6=A0=87=E9=A2=98=E6=94=B9=E4=B8=BA=20ColorOS=2017.0.1=20(alph?=
+ =?UTF-8?q?a-v1)=EF=BC=88=E5=90=AB=E5=8D=95=E6=B5=8B=E4=B8=8E=20check=5Fin?=
+ =?UTF-8?q?stall.py=EF=BC=89?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ installer/backend/src/esp.c                   | 4 ++--
+ installer/backend/src/esp.h                   | 6 ++++++
+ installer/backend/test/linux/check_install.py | 2 +-
+ installer/backend/test/test_stage2.c          | 2 +-
+ 4 files changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/installer/backend/src/esp.c b/installer/backend/src/esp.c
+index 340f734..8c1a239 100644
+--- a/installer/backend/src/esp.c
++++ b/installer/backend/src/esp.c
+@@ -242,14 +242,14 @@ int gk3w_is_machine_id(const char *s)
+ 
+ /* 文件名与各行都是承重的：boot_control HAL 按 *-android-a.conf / *-android-b.conf 改写 loader.conf 的 default
+  * （EspSlot.cpp:41-43）；OTA postinstall 只改 options 那一行、只往 slot_<后缀>/ 写这三个文件名。
+- * ⚠️ 标题里的 "crDroid 16.0" 是写死的，换大版本时要改。 */
++ * ⚠️ 标题里的产品名是写死的（GK3W_EGO_TITLE，见 esp.h），换大版本时要改。 */
+ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline)
+ {
+     int n;
+     if ((slot != 'a' && slot != 'b') || !gk3w_is_machine_id(mid))
+         return -1;
+     n = snprintf(out, cap,
+-                 "title      crDroid 16.0 (gaokun3) \xe2\x80\x94 slot _%c\n"
++                 "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _%c\n"
+                  "version    gaokun3-slot-%c\n"
+                  "sort-key   zandroid%c\n"
+                  "options    %s androidboot.slot_suffix=_%c\n"
+diff --git a/installer/backend/src/esp.h b/installer/backend/src/esp.h
+index 7934039..aa8d3a9 100644
+--- a/installer/backend/src/esp.h
++++ b/installer/backend/src/esp.h
+@@ -71,6 +71,12 @@ gk3w_backup_action gk3w_install_backup_decide(const uint8_t *cur, size_t cur_len
+ /* 这个 EFI 程序是不是 systemd-boot：带 "#### LoaderInfo: systemd-boot "（systemd-boot 自己留的版本标记） */
+ int gk3w_is_systemd_boot(const uint8_t *b, size_t n);
+ 
++/* EGO：启动项标题里的产品名与版本。未正式发版前用 alpha-vXX，随版本手动递增。
++ * 测试与 check_install.py 引用同一个字符串。 */
++#ifndef GK3W_EGO_TITLE
++#define GK3W_EGO_TITLE "ColorOS 17.0.1 (alpha-v1)"
++#endif
++
+ /* loader/entries/<mid>-android-<slot>.conf 的全文。返回写入的长度，out 不够返回 -1。 */
+ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline);
+ 
+diff --git a/installer/backend/test/linux/check_install.py b/installer/backend/test/linux/check_install.py
+index 5530455..a3ff33a 100644
+--- a/installer/backend/test/linux/check_install.py
++++ b/installer/backend/test/linux/check_install.py
+@@ -202,7 +202,7 @@ def main():
+     for s in 'ab':
+         for f in ('Image', 'gaokun3.dtb', 'ramdisk.img'):
+             same('%s/android/slot_%s/%s' % (a.mid, s, f), exp(f), 'boot.img 里的 %s' % f)
+-        entry = ('title      crDroid 16.0 (gaokun3) \u2014 slot _{s}\nversion    gaokun3-slot-{s}\nsort-key   zandroid{s}\n'
++        entry = ('title      ColorOS 17.0.1 (alpha-v1) \u2014 slot _{s}\nversion    gaokun3-slot-{s}\nsort-key   zandroid{s}\n'
+                  'options    {c} androidboot.slot_suffix=_{s}\nlinux      /{m}/android/slot_{s}/Image\n'
+                  'devicetree /{m}/android/slot_{s}/gaokun3.dtb\ninitrd     /{m}/android/slot_{s}/ramdisk.img\n'
+                  ).format(s=s, c=cmdline, m=a.mid)
+diff --git a/installer/backend/test/test_stage2.c b/installer/backend/test/test_stage2.c
+index 3360adc..01be763 100644
+--- a/installer/backend/test/test_stage2.c
++++ b/installer/backend/test/test_stage2.c
+@@ -325,7 +325,7 @@ static void test_esp(void)
+     char out[1024];
+     const char *mid = "0123456789abcdef0123456789abcdef";
+     const char *want =
+-        "title      crDroid 16.0 (gaokun3) \xe2\x80\x94 slot _b\n"
++        "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _b\n"
+         "version    gaokun3-slot-b\n"
+         "sort-key   zandroidb\n"
+         "options    console=tty0 quiet androidboot.slot_suffix=_b\n"

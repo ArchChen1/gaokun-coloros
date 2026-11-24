@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MateBook E Go</string>
+    <string name="keyboard_title">Detachable keyboard</string>
+    <string name="keyboard_summary">Turn the magnetic keyboard and touchpad on or off</string>
+    <string name="keyboard_switch_title">Keyboard enabled</string>
+    <string name="keyboard_switch_summary_on">Keyboard and touchpad are active</string>
+    <string name="keyboard_switch_summary_off">Keyboard and touchpad ignore all input</string>
+    <string name="keyboard_note">Turning this off inhibits the input devices in the kernel. The keyboard stays physically attached and charging; it simply stops reporting keys, pointer movement and wake events.</string>
+    <string name="tile_on">On</string>
+    <string name="tile_off">Off</string>
+    <string name="speaker_fx_title">Speaker enhancement (experimental)</string>
+    <string name="speaker_fx_summary">Bass enhancement or Huawei Histen for the built-in speakers</string>
+    <string name="speaker_fx_switch_title">Enable speaker enhancement</string>
+    <string name="speaker_fx_switch_summary_on">Sound from the built-in speakers is processed</string>
+    <string name="speaker_fx_switch_summary_off">Audio is passed through unchanged</string>
+    <string name="speaker_fx_engine_title">Processing</string>
+    <string name="speaker_fx_engine_bass">Bass enhancement</string>
+    <string name="speaker_fx_engine_histen">Huawei Histen</string>
+    <string-array name="speaker_fx_engine_entries">
+        <item>@string/speaker_fx_engine_bass</item>
+        <item>@string/speaker_fx_engine_histen</item>
+    </string-array>
+    <string-array name="speaker_fx_engine_values" translatable="false">
+        <item>bass</item>
+        <item>histen</item>
+    </string-array>
+    <string name="speaker_fx_note">Experimental. Only the built-in speakers are processed; headphones, Bluetooth and USB audio are never touched. Bass enhancement processes everything the speakers play, games included. Huawei Histen processes media (music, video) only, and games that use low-latency audio bypass it. Changes apply within about a second, except that Histen takes effect from the next playback. If the sound is distorted or cuts out, turn it off.</string>
+    <!-- USB-C port notices (v1.0 PWR-4 / USB-1, UsbPortNotifier). port0 = the port next to the power button. -->
+    <string name="usb_port_channel">USB-C port</string>
+    <string name="usb_port_channel_desc">Problems with the USB-C port next to the power button</string>
+    <string name="usb_port_broken_title">USB-C port stopped working</string>
+    <string name="usb_port_broken_text">The USB-C port next to the power button failed after standby. USB data and standby will come back after a restart; until then the tablet will not go to sleep and keeps using battery.</string>
+    <string name="usb_port_reversed_title">USB cable connected the wrong way round</string>
+    <string name="usb_port_reversed_text">The tablet is powering the other device and no data connection was made. If this is a computer (USB debugging, file transfer), unplug the cable and plug it in again.</string>
+    <!-- Unified boot entry (gk3boot) notices (2026-10-05, S9; BootEntryNotifier). -->
+    <string name="boot_entry_channel">Boot loader</string>
+    <string name="boot_entry_channel_desc">Notices from the boot entry (gk3boot), such as falling back to the previous system after a failed update</string>
+    <string name="boot_entry_fallback_title">Rolled back to the previous version</string>
+    <string name="boot_entry_fallback_text">The system installed by the last update failed to start, so the boot entry automatically went back to the previous version (now running slot %1$s). You can check for updates and try again; if this keeps happening, please report it.</string>
+    <string name="boot_entry_bcb_dropped_title">A pending reset request was cancelled</string>
+    <string name="boot_entry_bcb_dropped_text">A factory reset or recovery request that was still pending when the boot entry was installed has been cancelled and was not carried out. If you still want it, please start it again.</string>
+    <string name="boot_entry_other_title">The boot entry recorded a problem</string>
+    <string name="boot_entry_other_text">Before this start-up the boot entry recorded: %1$s. The system started normally; if this keeps happening, please report it.</string>
+    <string name="boot_entry_bypassed_title">This start-up bypassed the boot entry</string>
+    <string name="boot_entry_bypassed_text">The boot entry (gk3boot) is installed, but this start-up used the direct boot item instead: either the boot entry failed to start several times in a row and was skipped automatically, or the direct item was picked in the boot menu. A failed system update will not be rolled back automatically during this start-up. If this appears on every start-up, please report it.</string>
+    <!-- Touch feel switch (2026-10-25, TouchModeSettingsActivity / TouchModeTileService), injected into Settings > System. -->
+    <string name="touch_mode_title">Touch feel</string>
+    <string name="touch_mode_summary">Game mode (no palm rejection) or everyday mode (palm rejection)</string>
+    <string name="touch_mode_switch_title">Game touch mode</string>
+    <string name="touch_mode_switch_summary_on">Game: no palm rejection, so taps next to a thumb lying along the edge are not dropped</string>
+    <string name="touch_mode_switch_summary_off">Everyday: palm rejection, a resting hand is ignored</string>
+    <string name="touch_mode_note">Both modes follow your finger equally closely; they differ only in palm rejection. In game mode a palm or the base of the thumb resting on the screen may register as a touch. Everyday mode ignores a resting palm, which suits browsing, reading and handwriting, but while a thumb lies flat along the edge of the screen, taps around it may be ignored too.\n\nChanges apply right away, no restart needed, and survive restarts. A quick settings tile is also available: edit quick settings and add \"Game touch\".</string>
+    <string name="touch_mode_tile_label">Game touch</string>
+    <string name="touch_mode_game">Game</string>
+    <string name="touch_mode_daily">Everyday</string>
+
+    <!-- Kernel version spoofing (AppKernelSettingsActivity), injected into Settings → System. -->
+    <string name="app_kernel_title">Kernel version spoofing</string>
+    <string name="app_kernel_summary">The kernel version reported to apps</string>
+    <string name="app_kernel_switch_title">Report a different version to apps</string>
+    <string name="app_kernel_switch_summary_on">Non-system apps will read the kernel version set here</string>
+    <string name="app_kernel_switch_summary_off">Non-system apps will read the real kernel version</string>
+    <string name="app_kernel_version_title">Version reported to non-system apps</string>
+    <string name="app_kernel_version_invalid">Enter a version such as 6.6.30, using only letters, digits and . _ + -, at most 64 characters.</string>
+    <string name="app_kernel_real_title">Real kernel version</string>
+    <string name="app_kernel_note">Some apps only accept running on kernel 6.x or older. This setting only affects the kernel version number that non-system apps read; system components can still read the real version. Changes apply after a restart.</string>
+    <string name="app_kernel_restart_message">Changes apply after a restart. Restart now?</string>
+    <string name="app_kernel_restart_now">Restart</string>
+    <string name="app_kernel_restart_later">Later</string>
+
+    <!-- Stylus settings, injected into Settings → Connected devices -->
+    <string name="stylus_title">Stylus settings</string>
+    <string name="stylus_summary">Ink smoothing and double-tap on the pen</string>
+    <string name="stylus_smooth_title">Ink smoothing</string>
+    <string name="stylus_smooth_weak">Weak</string>
+    <string name="stylus_smooth_strong">Strong</string>
+    <string-array name="stylus_smooth_levels">
+        <item>Weak</item>
+        <item>Medium weak</item>
+        <item>Medium strong</item>
+        <item>Strong</item>
+    </string-array>
+    <string name="stylus_side_title">Double-tap action</string>
+    <string-array name="stylus_side_entries">
+        <item>Toggle eraser</item>
+        <item>Side button click</item>
+        <item>Off</item>
+    </string-array>
+    <string-array name="stylus_side_values" translatable="false">
+        <item>eraser</item>
+        <item>button</item>
+        <item>none</item>
+    </string-array>
+    <string name="stylus_note">Stronger smoothing gives smoother lines when zoomed in, but the ink trails further behind the pen tip while you write.</string>
+
+    <string name="denoise_title">Microphone noise suppression</string>
+    <string name="denoise_summary">Reduce background noise picked up by the built-in microphones</string>
+    <string name="denoise_call_title">Calls</string>
+    <string name="denoise_call_summary">Voice and video calls</string>
+    <string name="denoise_record_title">Recording</string>
+    <string name="denoise_record_summary">Voice recorders and most apps that record sound</string>
+    <string name="denoise_camcorder_title">Video recording</string>
+    <string name="denoise_camcorder_summary">The sound of videos recorded with the camera</string>
+    <string name="denoise_note">Only sound from the built-in microphones is processed. Noise suppression keeps speech and turns down other sounds, including music and ambient sound. Changes apply from the next call or recording.</string>
+</resources>

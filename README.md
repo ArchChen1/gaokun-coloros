@@ -15,7 +15,7 @@
 | `docs/` | 架构、构建规范、事故台账、刷机与验收清单 |
 | `docs/releases/` | 历史发布说明与专项报告（v43 系列、v45） |
 | `patches/` | 具体补丁及其说明（SystemUI 充电、vendor 黑屏修复说明等） |
-| `installer/` | 安装器：`app/` 整棵源码（Flutter Windows 应用 + C 后端）、`patches/`、`tools/make_release.py`、`UPSTREAM.md` |
+| `installer/` | 安装器的本项目层：`UPSTREAM.md`（来源与同步）、`patches/`、`tools/make_release.py`；源码在 `vendor/gaokun-android/` |
 | `tools/` | 辅助工具：`otatools/bin/lpmake`、依赖闭包求解、设备端探针脚本 |
 | `releases/` | 出包产物（不入库） |
 | `work/` | 抓包、截图、临时数据（不入库，只保留 `manifest.json` 快照） |

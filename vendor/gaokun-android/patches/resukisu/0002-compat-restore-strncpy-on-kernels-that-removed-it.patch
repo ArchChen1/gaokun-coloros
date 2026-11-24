@@ -1,0 +1,80 @@
+From: Akisaira <akisaira@outlook.com>
+Subject: [PATCH] KernelSU: compat: provide ksu_compat_strncpy() on kernels without strncpy()
+
+Mainline Linux removed strncpy(), causing link failures in KernelSU's
+allowlist.c, apk_sign.c, throne_tracker.c, and dispatch.c. Provide a static
+inline ksu_compat_strncpy() fallback in kernel/compat/kernel_compat.h when
+KSU_KERNEL_HAS_STRNCPY is not defined.
+
+Origin: local
+Upstream-Status: Pending
+---
+diff --git a/kernel/compat/kernel_compat.h b/kernel/compat/kernel_compat.h
+index cd62584..505fb82 100644
+--- a/kernel/compat/kernel_compat.h
++++ b/kernel/compat/kernel_compat.h
+@@ -9,6 +9,39 @@
+ #include <linux/fdtable.h>
+ #include "ss/policydb.h"
+ #include <linux/key.h>
++#include <linux/string.h>
++#include <linux/types.h>
++
++#ifndef KSU_KERNEL_HAS_STRNCPY
++/*
++ * Mainline removed strncpy() (Kees Cook's deprecation campaign); on those
++ * kernels there is no declaration and no definition, so the call sites in
++ * allowlist.c / apk_sign.c / throne_tracker.c / dispatch.c fail at link.
++ *
++ * Deliberately restore the exact C semantics instead of swapping in
++ * strscpy()/strscpy_pad() at each call site: dispatch.c copies uname
++ * buffers that go out to userspace and depends on strncpy's NUL padding,
++ * while throne_tracker.c deliberately relies on the "no terminator when the
++ * source is too long" behaviour.  Reproducing upstream's behaviour verbatim
++ * is the low-risk choice; modernising those call sites is upstream's job.
++ *
++ * Body copied from the pre-removal lib/string.c.
++ */
++static inline char *ksu_compat_strncpy(char *dest, const char *src, size_t count)
++{
++    char *tmp = dest;
++
++    while (count) {
++        if ((*tmp = *src) != 0)
++            src++;
++        tmp++;
++        count--;
++    }
++    return dest;
++}
++#define strncpy ksu_compat_strncpy
++#endif
++
+ #include <linux/ptrace.h>
+ #include <linux/syscalls.h>
+ #include "arch.h"
+diff --git a/kernel/tools/kernel_compat.mk b/kernel/tools/kernel_compat.mk
+index 57504d0..28abcfc 100644
+--- a/kernel/tools/kernel_compat.mk
++++ b/kernel/tools/kernel_compat.mk
+@@ -319,3 +319,20 @@ ifeq ($(shell grep -q "struct file .dentry_open.const struct path .path, int fla
+ $(info -- $(REPO_NAME)/compat: modern dentry_open found)
+ ccflags-y += -DKSU_COMPAT_HAS_MODERN_DENTRY_OPEN
+ endif
++
++# mainline deleted strncpy() outright (Kees Cook's deprecation campaign): on
++# such kernels include/linux/string.h mentions it only in prose, so a call
++# still compiles (gcc has a builtin prototype) and then fails at link time.
++#
++# NOTE: the pattern must not contain an escaped parenthesis.  make balances
++# parens while scanning $(shell ...), and a "\(" still counts as an opening
++# one, which swallows the closing paren and yields
++#   "invalid syntax in conditional".
++# Matching "char * strncpy" is enough: it only ever appears in the real
++# prototype, never in the "replacement for strncpy() uses ..." comments.
++ifeq ($(shell grep -qE "char \* ?strncpy" $(srctree)/include/linux/string.h; echo $$?),0)
++$(info -- $(REPO_NAME)/compat: kernel provides strncpy)
++ccflags-y += -DKSU_KERNEL_HAS_STRNCPY
++else
++$(info -- $(REPO_NAME)/compat: kernel has no strncpy, using local shim)
++endif

@@ -1,0 +1,34 @@
+From: Akisaira <akisaira@outlook.com>
+Subject: [PATCH] libcamera: base: thread: use sched_setaffinity() on Bionic
+
+Bionic does not provide the glibc extension pthread_setaffinity_np(), causing
+src/libcamera/base/thread.cpp to fail to compile when targeting Android.
+
+Use pthread_gettid_np() and sched_setaffinity() in
+Thread::setThreadAffinityInternal() when building against Bionic (__BIONIC__).
+
+Origin: local
+Upstream-Status: Inappropriate [Android-specific, upstream prefers meson check]
+---
+diff --git a/src/libcamera/base/thread.cpp b/src/libcamera/base/thread.cpp
+index b204355a5..fbb94337e 100644
+--- a/src/libcamera/base/thread.cpp
++++ b/src/libcamera/base/thread.cpp
+@@ -462,7 +462,17 @@ void Thread::setThreadAffinityInternal()
+ 		return;
+ 
+ 	const cpu_set_t &cpuset = data_->cpuset_.value();
++#if defined(__BIONIC__)
++	/*
++	 * bionic has no pthread_setaffinity_np(), which is a glibc extension.
++	 * Thread affinity on Linux is a per-tid property anyway, so go through
++	 * the tid and sched_setaffinity() instead.
++	 */
++	sched_setaffinity(pthread_gettid_np(thread_.native_handle()),
++			  sizeof(cpuset), &cpuset);
++#else
+ 	pthread_setaffinity_np(thread_.native_handle(), sizeof(cpuset), &cpuset);
++#endif
+ }
+ 
+ /**

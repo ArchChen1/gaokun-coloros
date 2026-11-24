@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      TCP 缓冲区：rmem 上限 2 MB → 8 MB，wmem 上限 1 MB → 4 MB（其余照 AOSP 默认）。
+      默认值出自 packages/modules/Wifi/service/ServiceWifiResources/res/values/config.xml:453，
+      由 ClientModeImpl.java:8386 下发给 netd（写 /proc/sys/net/ipv4/tcp_rmem / tcp_wmem）。
+
+      ★ 实测（2026-09-24，见 docs/dev/android-bringup.md）：到 Cloudflare 边缘 RTT 约 294 ms，
+        单连接吞吐 ≈ 窗口 / RTT —— 2 MB 上限时 3.5–3.8 MB/s，临时改成 8 MB 后 9.1–9.8 MB/s
+        （同一 URL、同一时刻，各两次）。4 连接并发合计 12.6 MB/s ⇒ 出口本身不是瓶颈。
+        系统内 OTA 是单连接下载，这条直接决定它有多快（v0.6.2 发版说明里的"下载只有 1–2 MB/s"）。
+      内存代价：只在确有长肥管道时 autotuning 才会涨到上限，局域网 / 低 RTT 连接不受影响。
+    -->
+    <string name="config_wifi_tcp_buffers" translatable="false">524288,1048576,8388608,262144,524288,4194304</string>
+
+    <!--
+      关掉 WPA2 → WPA3 自动升级（issue #11 附带报告）：WPA2/WPA3 混合模式的路由器上，框架默认把保存的
+      WPA2 网络升级成 SAE 去连，ath11k 在 SAE 关联时被 AP 拒（Reason 9 = STA_REQ_ASSOC_WITHOUT_AUTH），
+      纯 WPA2 正常；报告者用 force-overlay-config-value 关掉它后能连上。默认值 true 出自
+      packages/modules/Wifi/service/ServiceWifiResources/res/values/config.xml:808，读取在 WifiGlobals.java:352。
+      只影响"混合模式 AP 上的 WPA2 网络要不要改走 SAE"；纯 WPA3 网络照旧走 SAE。
+      与 issue #2（纯 WPA3 关联后被踢，TODO A6b）不是一回事，那条仍未复现。
+    -->
+    <bool name="config_wifiSaeUpgradeEnabled" translatable="false">false</bool>
+
+    <!--
+      软件 PNO（v1.0 计划 NET-1）：息屏且系统醒着时（插电、后台下载 / 播放持锁），Wi-Fi 一断就再也连不回来，
+      直到亮屏。2026-10-04 实机 dumpsys wifi：断开后 6 次 "PnoScanListener onFailure: reason: -3 not supported"，
+      之后 WifiConnectivityManager 放弃（"Failed to successfully start PNO scan for 5 times"），已保存的网络
+      -34 dBm 就在旁边也不连。根因：ath11k 没有 sched_scan（iw phy 里没有 start_sched_scan），硬件 PNO 不可用；
+      而软件 PNO（定时单次扫描代替固件 PNO）默认关着。
+      ⚠️ 不要动 config_wifi_background_scan_support —— 那是硬件 PNO 的开关，ath11k 开了也只会在 wificond 里失败。
+
+      依据（2026-10-04 从本机 apex 里取出的 ServiceWifiResources.apk / service-wifi.jar 反汇编，源码行号待构建机核实）：
+        * 资源在 overlayable "WifiCustomization" 里、policy 含 vendor，id 0x7f02006c，默认 false（dumpsys 的 WifiResourceCache 同）；
+        * 唯一读取点 WifiGlobals.isSwPnoEnabled()，用在两处：
+          WifiScanningServiceImpl$WifiPnoScanStateMachine$StartedState.processMessage —— 硬件 PNO 不支持时，
+            isSwPnoEnabled() && DeviceConfigFacade.isSoftwarePnoEnabled() 才转进 SwPnoScanState，否则回 -3 "not supported"；
+          WifiServiceImpl.isPnoSupported() —— 对外报告"支持 PNO"。
+      ⚠️★ 所以光改这里还不够：还有第二道门 DeviceConfig wifi/software_pno_enabled（DeviceConfigFacade
+         .updateDeviceConfigFlags 里默认 false），本机上它被显式置成了 false（device_config list wifi，
+         wifi 命名空间 94 项，多半是 GMS 同步下来的，来源未核实）。那一道详见 docs/TODO.md。
+    -->
+    <bool name="config_wifiSwPnoEnabled" translatable="false">true</bool>
+
+    <!--
+      MAC 地址（v1.0 NET-4 / D14：持久模式 + 稳定的设备 MAC）。资源出处：packages/modules/Wifi/service/
+      ServiceWifiResources/res/values/config.xml，均在 overlayable.xml 的 "WifiCustomization"（:18-20，policy 含 vendor）里。
+
+      ① 随机化总开关，默认 false（config.xml:373；overlayable.xml:129）。WifiGlobals.isConnectedMacRandomizationEnabled
+         （WifiGlobals.java:258-261）只看它；它为 false 时 ClientModeImpl 连接前根本不碰 MAC（:8345-8360），
+         每个网络上的"隐私"设置一律无效、Settings 也不显示（WifiConfigController2.java:341），wlan0 用的就是固件每次开机
+         随机给的 00:03:7f:12:xx:xx —— B20"每次开机都换"的真正原因。打开后改 MAC 走 HAL 的 setMacAddress
+         （iface down → SIOCSIFHWADDR → up，hardware/interfaces/wifi/aidl/default/wifi_iface_util.cpp:53-80）。
+         2026-10-04 用 force-overlay-config-value 在本机临时打开过，三次都连上（TODO B20 / #14 那一行）。
+         新网络默认"按网络固定的随机 MAC"靠 tree-fix [20]（crDroid 把默认写死成每次连接都换，没有资源能改）。
+      ② config_wifiSaveFactoryMacToWifiConfigStore 默认 true（config.xml:370；overlayable.xml:128）：框架把第一次拿到的
+         出厂 MAC 永久存进 WifiSettingsConfigStore（ClientModeImpl.java:8065-8095）。老机器存的是当年那个固件随机地址，
+         tree-fix [19] 从 soc0 序列号派生的稳定地址就永远用不上 ⇒ 关掉，每次都问 HAL（HAL 那边本来就稳定）。
+      ⬜ 未编译、未上机。判据见 scripts/crdroid-tree-fixes.py 的 [19] / [20]。
+      ★ 2026-10-05 合并时改定：1.0 先【不开】①（保持 false）。老用户已存的网络都记着 crDroid 写死的 ALWAYS，一开总开关
+        就会第一次真的"每次连接都换 MAC"（含每次待机恢复后的重连），校园网 MAC 绑定反而更糟，而存储里分不出用户选的
+        ALWAYS 与默认的 ALWAYS，没有安全的迁移。保持 false ⇒ 所有网络都用 [19] 派生的稳定设备 MAC —— 正是 NET-4 要的
+        "MAC 不再每次开机都变"；代价是和以前一样没有按网络的随机 MAC（隐私选项不显示）。[20] 留着（总开关关时无效、无害），
+        以后要开随机化时连同一次性迁移（WifiConfigManager 加迁移标记）一起做。
+    -->
+    <bool name="config_wifi_connected_mac_randomization_supported" translatable="false">false</bool>
+    <bool name="config_wifiSaveFactoryMacToWifiConfigStore" translatable="false">false</bool>
+
+    <!--
+      热点 5 GHz / WPA3 / 国家码（v1.0 NET-7）。出处同上（config.xml 行号 / overlayable.xml 行号）。
+      ① config_wifi5ghzSupport 默认 false（:31 / :24）：热点能不能选 5 GHz 是它与 config_wifiSoftap5ghzSupported（默认 true，
+         :345）的"与"（util/ApConfigUtil.java:1377-1380 isSoftApBandSupported）⇒ 默认下热点只有 2.4 GHz。
+         STA 不受影响（WifiServiceImpl.java:5820-5825 为 false 时退回看驱动报的频段）。WCN6855 / ath11k 支持 5 GHz AP。
+      ② config_wifi_softap_sae_supported 默认 false（:315 / :111；读取 ApConfigUtil.java:1323-1332）⇒ 热点安全类型里没有 WPA3。
+         hostapd 本身带 SAE 编译（external/wpa_supplicant_8/hostapd/Android.bp:458 -DCONFIG_SAE，android.config:248）。
+         ⚠️ 与 STA 侧的 SAE 关联问题（issue #2 / #11）无关：那是本机去连别人的 WPA3 AP；这里是别人来连本机的热点。
+      ③ 国家码一直是 null：本机没有基带，框架的国家码来源只剩驱动上报、扫描结果和 ro.boot.wificountrycode（都没有）——
+         WifiCountryCode.pickCountryCode（WifiCountryCode.java:653-669）。没有国家码，5 GHz 热点起不来。
+         a. config_wifiDriverSupportedNl80211RegChangedEvent 默认 false（:1018 / :287）。为 false 时框架（T 及以后）
+            不认驱动主动上报的 NL80211_CMD_(WIPHY_)REG_CHANGE（WifiCountryCode.java:180-189），只认自己 set 成功的。
+            ath11k 是 REGULATORY_WIPHY_SELF_MANAGED（ath11k reg.c:1021 @7.2.9），固件 11d / 用户提示后经
+            regulatory_set_wiphy_regd（reg.c:286）发 WIPHY_REG_CHANGE；wificond 收这两种事件
+            （system/connectivity/wificond/net/netlink_manager.cpp:563-564）⇒ 置 true。
+         b. config_wifiUpdateCountryCodeFromScanResultGeneric 默认 false（:1282 / :340）：没有基带时从扫描到的 AP 的
+            country IE 推国家码（WifiCountryCode.java:465-469 与 findCountryCodeFromScanResults）。作 a 的兜底：
+            a 依赖固件 11d 有没有真报，未验证。⚠️ 资源注释提到这在某些地区需要监管预审（FCC 594280），社区 ROM 照常启用。
+      ⓘ 没开 ACS（config_wifi_softap_acs_supported，:312）：与 STA 并发时 ACS 要离信道扫描，先不碰。
+      ⬜ 未编译、未上机。判据：`cmd wifi get-country-code` 非 null；热点设置里能选 5 GHz 和 WPA3；
+         另一台手机连上 5 GHz / WPA3 热点能上网（配合 NET-2 的 STA+AP）。
+    -->
+    <bool name="config_wifi5ghzSupport" translatable="false">true</bool>
+    <bool name="config_wifi_softap_sae_supported" translatable="false">true</bool>
+    <bool name="config_wifiDriverSupportedNl80211RegChangedEvent" translatable="false">true</bool>
+    <bool name="config_wifiUpdateCountryCodeFromScanResultGeneric" translatable="false">true</bool>
+</resources>

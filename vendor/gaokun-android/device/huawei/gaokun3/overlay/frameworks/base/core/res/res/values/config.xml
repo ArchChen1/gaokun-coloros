@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Framework resource overlay for gaokun3.
+  Fed to Soong by DEVICE_PACKAGE_OVERLAYS in device.mk; the path mirrors the
+  framework-res module's own resource directory.
+-->
+<resources>
+
+    <!--
+      Render at 120 Hz instead of 60.
+
+      The panel has two modes and the *hardware* one already in use is 120 Hz
+      (SurfaceFlinger: activeMode vsyncRate=120.00 Hz, vsync period 8.33 ms).
+      What pinned the render rate to 60 was this framework default:
+      frameworks/base/core/res/res/values/config.xml:5870 ships
+      config_defaultRefreshRate = 60, and the scheduler duly configured itself
+      for 60 Hz work (app duration 16666682 ns, SF duration 15666682 ns).
+
+      ⚠️ Settings.System.peak_refresh_rate does NOT fix this — measured: setting
+      it to 120 left the scheduler durations at 16.67 ms. The base/default rate
+      is what governs, not the peak.
+
+      Pinning rather than using config_defaultPeakRefreshRate=120 with
+      config_defaultRefreshRate=0: the 60 Hz and 120 Hz modes sit in *different*
+      mode groups (group=2 and group=1), so moving between them is a full
+      non-seamless modeset rather than a seamless switch. Pinning the mode the
+      panel is already in avoids that entirely.
+
+      Cost is power: 120 Hz composites twice as often. Acceptable here because
+      the GPU is nowhere near loaded — under Genshin at maximum settings it
+      spends 91% of its time at its *lowest* 270 MHz step and peaks at 690 MHz.
+      To go back to 60, set this to 60 and rebuild.
+    -->
+    <integer name="config_defaultRefreshRate">120</integer>
+
+    <!--
+      Take headset jack insertion from an input device rather than from
+      /sys/class/switch/h2w.
+
+      WiredAccessoryManager has two ways to learn that something was plugged
+      into the jack. The default is the legacy switch class: it opens
+      /sys/class/switch/h2w and listens for uevents. That directory does not
+      exist on this machine and never will, because mainline has no h2w
+      driver; measured on device: "ls /sys/class/switch/" is ENOENT. So the
+      framework never learned about the jack at all, which is why plugging
+      headphones in did nothing even once the audio path itself worked.
+
+      With this true, WiredAccessoryManager consumes SW_HEADPHONE_INSERT and
+      SW_MICROPHONE_INSERT from an ordinary evdev switch device instead. That
+      source already exists and is already being read: the ALSA jack shows up
+      as input device "SC8280XP-HUAWEI-GAOKUN3 Headset Jack" (event12) with
+      SW bitmask 0xd4, which is HEADPHONE_INSERT, MICROPHONE_INSERT,
+      LINEOUT_INSERT and VIDEOOUT_INSERT, and dumpsys input already classifies
+      it as "KEYBOARD | SWITCH" with a live Switch Input Mapper. Nothing was
+      missing on the kernel side; only this flag.
+
+      Pairs with the Wired Headphone / Wired Headset device ports added to
+      audio/primary_audio_policy_configuration.xml, which is what turns the
+      resulting connection event into an actual ALSA device.
+    -->
+    <bool name="config_useDevInputEventForAudioJack">true</bool>
+
+    <!--
+      Android 16 desktop windowing: deliberately turned OFF.
+
+      It was switched on briefly and switched back off at the user's request:
+      on this tablet it puts every app into a freeform window, which is
+      disruptive for normal use.
+
+      ⚠️★ These must be explicit `false` overrides, not just "leave them out".
+      crDroid turns desktop mode on for **every** device:
+
+        vendor/lineage/overlay/common/frameworks/base/core/res/res/values/
+        config.xml:98   <bool name="config_isDesktopModeSupported">true</bool>
+
+      ⚠️★ And writing `false` **here** does not work either. Measured twice:
+      the build assertion still reported `config_isDesktopModeSupported 还是
+      true` with this file saying false. In this tree
+      **PRODUCT_PACKAGE_OVERLAYS (vendor/lineage) outranks
+      DEVICE_PACKAGE_OVERLAYS (this file)** — the opposite of the usual
+      claim that the device overlay wins. Our other values here work only
+      because vendor/lineage does not touch them (checked name by name:
+      config_isDesktopModeSupported is the single conflict).
+      The actual disable is done by scripts/crdroid-tree-fixes.py, which
+      edits vendor/lineage/overlay/common directly. The entries below are
+      kept only to state intent.
+
+      Removing our own entry therefore changed nothing — the build assertion
+      caught it (`config_isDesktopModeSupported 还是 true`). Ours is a
+      DEVICE_PACKAGE_OVERLAYS overlay, which outranks vendor/lineage's
+      PRODUCT_PACKAGE_OVERLAYS, so an explicit false here wins.
+
+      ★ This also corrects an earlier misreading: the upstream reference
+      (dragon-lineage's Radxa Dragon commit d480d02) sets *only*
+      config_canInternalDisplayHostDesktops, and that is in fact correct and
+      sufficient for a Lineage-based tree, because Lineage already supplies
+      config_isDesktopModeSupported=true. Checking AOSP's default (false)
+      without checking the ROM's own overlays is what led to the wrong call.
+
+      ⚠️ There is no runtime way back — the developer-options toggle can only
+      force desktop mode ON. Measured on device:
+
+        show_desktop_experience_dev_option = true
+
+      and DesktopModeFlags.getToggleOverrideFromSystem() short-circuits on it:
+
+        if (Flags.showDesktopExperienceDevOption()) {
+            if (DesktopExperienceFlags.getToggleOverride()) return OVERRIDE_ON;
+            return ToggleOverride.OVERRIDE_UNSET;      // never OVERRIDE_OFF
+        }
+
+      so Settings.Global "override_desktop_mode_features" is dead here —
+      verified: writing 0 changed nothing. "Off by default, opt in later" is
+      likewise not expressible, because canEnterDesktopMode() is
+      isDeviceEligibleForDesktopMode() && ENABLE_DESKTOP_WINDOWING_MODE, the
+      aconfig flag is already true, and being eligible at all therefore means
+      "always on".
+
+      ⇒ To enable desktop windowing again, flip these two to true and rebuild.
+    -->
+    <bool name="config_isDesktopModeSupported">false</bool>
+    <bool name="config_canInternalDisplayHostDesktops">false</bool>
+    <bool name="config_isDesktopModeDevOptionSupported">false</bool>
+
+
+    <!--
+      TODO A0 的根因：这台机器从来没有过导航栏，于是手势导航的返回手势
+      在物理上就不存在。
+
+      实测（2026-08-24，桌面模式已关、navigation_mode=2 的干净状态）：
+        dumpsys window windows  → 窗口列表里【只有 StatusBar，没有 NavigationBar】
+        SysUiState              → hasNavigationBar=false
+        InsetsSource mandatorySystemGestures
+                                → frame=[0,0][1600,42] sideHint=TOP
+                                   —— 只有顶部一条，左右两侧没有任何手势区
+        mSystemGestureExclusion → SkRegion()（空，不是被应用屏蔽掉的）
+
+      手势导航的返回处理器（SystemUI 的 EdgeBackGestureHandler）是随
+      NavigationBar 组件创建的。没有导航栏 ⇒ 没有处理器 ⇒ 也没有左右手势
+      inset，边缘往里滑什么都不会发生。
+
+      AOSP 的默认值是 false（core/res/res/values/config.xml:2771，注释说
+      "in the future this may be autodetected"）—— 那是给有实体按键的机器
+      准备的。本机没有实体导航键，必须自己声明。我们此前【从未声明过】。
+
+      ⚠️ 之前 A0 一直挂着"假说未证实"，怀疑是桌面模式的 freeform 窗口。
+      那个假说是错的：桌面模式已经关了、窗口是 fullscreen，手势照样没有。
+
+      ★ Lineage 不覆盖这一项（逐名核对过 vendor/lineage 的 common overlay），
+      所以设备 overlay 在这里是有效的 —— 不像 config_isDesktopModeSupported
+      那样要绕到 crdroid-tree-fixes.py 去改。
+    -->
+    <bool name="config_showNavigationBar">true</bool>
+
+    <!--
+      ★ NTP 服务器（TODO B22，#122）。AOSP 默认只有 ntp://time.android.com
+      （core/res/res/values/config.xml:2787），它在国内不可达 —— 2026-09-24 设备上实测：
+        cmd network_time_update_service force_refresh      → false
+        settings put global ntp_server ntp.aliyun.com 后再刷 → true，时钟当场纠正 41 分钟
+      而 mLastAutoSystemClockTimeSet=null（这次开机从没同步成功过）。
+
+      LineageOS 其实给中国配了服务器，但放在 values-mcc460 里
+      （vendor/lineage/overlay/common/frameworks/base/core/res/res/values-mcc460/config.xml:25）
+      —— 要插着国内 SIM 才生效，本机没有基带，永远落不到那份。
+
+      框架按列表顺序挨个试、失败就试下一个，成功的那个下次排最前
+      （core/java/android/util/NtpTrustedTime.java:350-366）—— 但只在本次开机内有效，每次开机又从头排。
+      ★ 2026-10-04 起 ntp.aliyun.com 排第一（v1.0 计划 NET-12）：原来 time.android.com 在前，国内每轮对时
+        都要先在它上面耗掉一个超时（mTimeout=PT5S）。那次开机从连上网到第一次对时成功用了 7 分 12 秒，
+        前 5 轮全失败（同期在做 #16 的挂起测试、网络 id 100→122 换个不停，混杂因素没排除），成功的是 aliyun。
+        time.android.com 挪到第二：国外用户若连不上 aliyun，多等的也只是一个超时（见下面 config_ntpTimeout），随后本次开机就排到最前。
+        ⚠️ aliyun 在海外的可达性没有实测过（开发机在国内、走代理，测不出来）。
+      ⚠️ 设置项 ntp_server 优先于这里（NtpTrustedTime.java:647-653）；开发机上手动设过的话，
+         验证这份覆盖前先 settings delete global ntp_server。
+    -->
+    <string-array translatable="false" name="config_ntpServers">
+        <item>ntp://ntp.aliyun.com</item>
+        <item>ntp://time.android.com</item>
+        <item>ntp://ntp.tencent.com</item>
+        <item>ntp://ntp.ntsc.ac.cn</item>
+    </string-array>
+
+    <!--
+      ★ 对时失败后一直按短间隔重试，不再"失败 3 次就等 18 小时"（v1.0 计划 NET-12 复核）。
+      2026-10-04 实机 dumpsys network_time_update_service：mNormalPollingIntervalMillis=64800000（18 h）、
+      mShortPollingIntervalMillis=60000、mTryAgainTimesMax=3；PT4M8S 那次第 4 连败后 mTryAgainCounter 归 0、
+      下次对时排到 PT18H3M54S —— 那次能在 7 分钟对上，只是挂起测试又触发了几次 "network available"。
+      网络一直稳的普通用户若前几轮都失败（DNS 还没就绪之类），时钟可能 18 小时不校，而本机 RTC 本来就会漂（B22：慢过 41 分钟）。
+
+      依据（本机 services.jar 反汇编，源码行号待构建机核实）：NetworkTimeUpdateService.<init> 用
+      Resources.getInteger(0x010e010e) 读本项（framework-res.apk 里 0x010e010e = config_ntpRetry，
+      0x010e010c / 0x010e010d = config_ntpPollingInterval / config_ntpPollingIntervalShorter）；
+      EngineImpl.refreshAndRescheduleIfRequired 在失败时：mTryAgainTimesMax < 0 ⇒ mTryAgainCounter 固定为 1、
+      下次按短间隔（60 s）；否则计数超过上限就归 0、改按 18 h。成功一次计数即归 0，回到 18 h 的正常周期。
+      代价：只在"对时一直失败"时每分钟发一轮 NTP 请求；排程用的闹钟类型是 3（ELAPSED_REALTIME，不唤醒），
+      睡着时不会因此醒来，但到点后由之后的某次唤醒带着跑一轮，这一轮全程持唤醒锁（见下面 config_ntpTimeout）。
+    -->
+    <integer name="config_ntpRetry">-1</integer>
+
+    <!--
+      每个 NTP 地址的超时，默认 5 s。对时失败时一轮要把解析出的地址逐个试完，全程持 PARTIAL 唤醒锁。
+      连着没有互联网、域名又能解析的 Wi-Fi 时，每一轮都要等满所有超时。2 s 把这样的一轮缩短到约五分之二。
+      代价：没有地址在 2 s 内回复、但有地址能在 5 s 内回复的网络（原来对得上），现在每一轮都会失败。
+    -->
+    <integer name="config_ntpTimeout">2000</integer>
+
+    <!-- Automatic brightness, from the tcs3701 ambient light sensor the sensors
+         HAL offers (sensors-hal/README.md). No nits mapping is configured, so
+         the framework uses its simple strategy: the lux points below (0 is
+         implied first) to the backlight values that follow, interpolated in
+         between. About 140 of 255 in an indoor room of about 115 lux; the
+         slider in automatic mode shifts the curve per user. -->
+    <bool name="config_automatic_brightness_available">true</bool>
+    <integer-array name="config_autoBrightnessLevels">
+        <item>2</item>
+        <item>5</item>
+        <item>10</item>
+        <item>20</item>
+        <item>40</item>
+        <item>70</item>
+        <item>120</item>
+        <item>200</item>
+        <item>350</item>
+        <item>600</item>
+        <item>1000</item>
+        <item>2000</item>
+        <item>4000</item>
+        <item>8000</item>
+    </integer-array>
+    <integer-array name="config_autoBrightnessLcdBacklightValues">
+        <item>30</item>
+        <item>40</item>
+        <item>50</item>
+        <item>62</item>
+        <item>76</item>
+        <item>92</item>
+        <item>112</item>
+        <item>140</item>
+        <item>160</item>
+        <item>180</item>
+        <item>200</item>
+        <item>218</item>
+        <item>235</item>
+        <item>248</item>
+        <item>255</item>
+    </integer-array>
+
+    <!--
+      Closing the keyboard cover turns the screen off, opening it wakes it.
+
+      PhoneWindowManager acts on SW_LID according to Settings.Global.LID_BEHAVIOR,
+      and AOSP's default of 0 ignores it. This resource is only read once:
+      SettingsProvider's DatabaseHelper.loadGlobalSettings() turns it into
+      LID_BEHAVIOR = 1 when the settings database is created. Installs that
+      already have a database get the same value from LidBehaviorDefault in Parts.
+
+      Folding the cover behind the screen does not raise SW_LID.
+    -->
+    <bool name="config_lidControlsSleep">true</bool>
+
+    <!--
+      Color modes in Settings > Display > Colors, see docs/dev/display-color.md.
+
+      2 (Saturated, relabelled Vivid) turns SurfaceFlinger's color management
+      off: content goes out as it is and the kernel shows it through the
+      factory Display P3 calibration, so sRGB content fills the panel's
+      near-P3 gamut, like Windows' P3 mode on this machine.
+      0 (Natural, relabelled Standard) keeps color management: sRGB content
+      through the factory sRGB calibration, wide-gamut content through the
+      P3 one, switched per frame.
+
+      Boosted (1) would only add a saturation matrix on top of Natural, and
+      Adaptive (3) needs an ENHANCE render intent the HWC does not report.
+      The default comes from persist.sys.sf.native_mode in device.mk.
+    -->
+    <integer-array name="config_availableColorModes">
+        <item>2</item>
+        <item>0</item>
+    </integer-array>
+
+</resources>

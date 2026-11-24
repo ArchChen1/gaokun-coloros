@@ -1,0 +1,63 @@
+# 相机 HAL（android.hardware.camera.provider-service.gaokun3，libcamera 软件 ISP）。
+#
+# 域复用 AOSP 的 hal_camera_default（system/sepolicy/vendor/hal_camera_default.te）：
+# binder / 服务注册 / video_device / camera_device / dmabuf heap / gpu_device 都现成。
+# 这里只补 libcamera 这条与手机 SoC 相机 HAL 不同的路径上缺的几样。
+# ⚠️ 全系统仍 permissive（TODO B1）：这些规则现在的作用是让 denial 日志里剩下的
+#    才是真缺口，不是"HAL 跑在 init 域里"那种照抄就错的噪声。
+
+# libcamera 的日志（LIBCAMERA_LOG_FILE=/data/vendor/camera/libcamera.log）
+type gaokun3_camera_vendor_data_file, file_type, data_file_type;
+allow hal_camera_default gaokun3_camera_vendor_data_file:dir create_dir_perms;
+allow hal_camera_default gaokun3_camera_vendor_data_file:file create_file_perms;
+
+# libcamera 枚举设备走 sysfs（/sys/class/video4linux/*、/sys/devices/…/uevent、dev），
+# 主线 V4L2 的 Media Controller 也靠它把 /dev/media* 对到 /dev/v4l-subdev*。
+r_dir_file(hal_camera_default, sysfs)
+
+# 后摄闪光灯：/sys/class/leds/white:flash/{brightness,…}（genfs_contexts 打成 sysfs_leds）
+allow hal_camera_default sysfs_leds:dir r_dir_perms;
+allow hal_camera_default sysfs_leds:file rw_file_perms;
+
+# ── libcamera 软件 ISP 的参数 memfd（2026-09-27，#126）─────────────────────────
+# 证据：`hal_camera_default tmpfs:file { write map read }  name=memfd:softIsp_params`（HAL 启动时）。
+# 本机策略 memfd_class=0，memfd 的 inode 按"创建者 × tmpfs"的 type_transition 取标签，
+# 没有转换规则就落在通用 tmpfs 上。照核心策略的 tmpfs_domain() 写法给一个专用类型
+# （public/te_macros:76；hal_graphics_composer_default 也是这样：vendor/hal_graphics_composer_default.te）。
+# ⚠️ 运行期 enforcing 试跑里相机照样全过，是因为 memfd 早在开机时就建好并映射了 ——
+#    enforcing 下 HAL 一旦重启，这里就会失败，软件 ISP 出不了帧。
+# ⓘ A17 仍然适用：A17 的 private/policy_capabilities 没有声明 memfd_class（只有 functionfs_seclabel 与
+#    netlink_xperm 是相对 lineage-23.0 新增的），memfd 仍走 tmpfs 的 type_transition。理由与核对见 crash_dump.te 末尾。
+type gaokun3_camera_tmpfs, file_type;
+type_transition hal_camera_default tmpfs:file gaokun3_camera_tmpfs;
+allow hal_camera_default gaokun3_camera_tmpfs:file { read write getattr map };
+
+# ── 相机 HAL 要找 allocator 与 mapper（2026-09-29，第七轮运行期 enforcing 试跑）──────────
+# 证据（enforcing，permissive=0）：
+#   hal_camera_default hal_graphics_allocator_service:service_manager find  IAllocator/default
+#   hal_camera_default hal_graphics_allocator_default:binder call
+#   hal_camera_default hal_graphics_mapper_service:service_manager find     mapper/minigbm
+#   hal_camera_default vendor_minigbm_debug_prop:file read                  （minigbm 在 HAL 进程内）
+# ★ 后果：enforcing 下前后摄【全部】出不了帧（设备错误 4 → 断开），HAL 崩溃重启。
+#   第六轮试跑里相机是过的，是因为 HAL 早在开机时就拿到了 allocator；这一轮试跑中途
+#   HAL 重启过，才露出来。用 ksud 在线补这几条后：enforcing 下 HAL 重启 3 次、后 / 前 / 后全过。
+# 核心策略的 hal_camera_default 不是 allocator 客户端（vendor/hal_camera_default.te 只有
+# private/hal_camera.te:19 的 fd use）。做成客户端：find allocator + binder call 来自
+# hal_client_domain，find mapper 来自 private/hal_graphics_allocator.te:6。
+# 与 hal_graphics_composer_default.te 同一行，AOSP 的 hal_evs_default 也是这样。
+hal_client_domain(hal_camera_default, hal_graphics_allocator)
+get_prop(hal_camera_default, vendor_minigbm_debug_prop)
+
+# ── 相机 HAL 要能用合成器发的栅栏 fd（2026-10-08，issue #23）──────────────────────
+# 证据（用户机 1.0.0-rc.1，enforcing，permissive=0；Aperture 预览跑到第 251 个请求）：
+#   avc: denied { use } path="anon_inode:sync_file" scontext=u:r:hal_camera_default:s0
+#        tcontext=u:r:hal_graphics_composer_default:s0 tclass=fd
+#   → libbinder BR_FAILED_REPLY (-1 EPERM) → AidlCamera3-Device processBatchCaptureRequests 失败
+#   → "Unable to submit capture request 251 to HAL device: Broken pipe" → CAMERA_ERROR(3)，
+#     Aperture 反复弹 "Error while setting up the session"、自动重开。
+# 预览缓冲被显示过一轮后，带着 drm_hwcomposer 建的 KMS 释放栅栏（sync_file）回到相机请求里；
+# 那个 fd 的创建者是合成器进程。手机上的 HWC 栅栏多半经 surfaceflinger 合并、标签是 surfaceflinger
+# （private/hal_camera.te:23 只放行了它），本机 drm_hwcomposer 的原样传过来，就落空了。
+# 核心策略给 cameraserver / appdomain / hal_codec2_server 都放行了同一条（private/cameraserver.te:24、
+# private/app.te:410、private/hal_codec2.te:16），唯独 hal_camera 没有。
+allow hal_camera_default hal_graphics_composer:fd use;

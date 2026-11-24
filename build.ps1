@@ -18,7 +18,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Repo = $PSScriptRoot
-$Installer = Join-Path $Repo 'installer\app'
+$Installer = Join-Path $Repo 'vendor\gaokun-android'
 $FlutterVersion = '3.47.2'
 $LlmName = 'llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64'
 $LlmSha = '919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926'
@@ -93,14 +93,14 @@ echo 'LLVM_MINGW_OK'
 }
 
 function Invoke-InstallerBackend {
-  if (-not (Test-Path (Join-Path $Installer 'backend\Makefile'))) { throw '缺 installer/app/backend，仓库不完整' }
+  if (-not (Test-Path (Join-Path $Installer 'installer\backend\Makefile'))) { throw '缺 vendor/gaokun-android/installer/backend，仓库不完整' }
   Ensure-llvm-mingw
   $sub = ToWslPath $Installer
   $v = "dev-" + (git -C $Repo rev-parse --short HEAD)
-  Invoke-Wsl "cd $sub && make -C backend test"
-  Invoke-Wsl "cd $sub && make -C backend win-x64 sdboot GK3W_VERSION=$v LLVM_MINGW=`$HOME/opt/$LlmName"
-  Invoke-Wsl "cd $sub && bash backend/mke2fs/build.sh x64"
-  Invoke-Wsl "cd $sub && ls -l backend/build/x64/gk3w.exe backend/build/sdboot/systemd-bootaa64.efi"
+  Invoke-Wsl "cd $sub && make -C installer/backend test"
+  Invoke-Wsl "cd $sub && make -C installer/backend win-x64 sdboot GK3W_VERSION=$v LLVM_MINGW=`$HOME/opt/$LlmName"
+  Invoke-Wsl "cd $sub && bash installer/backend/mke2fs/build.sh x64"
+  Invoke-Wsl "cd $sub && ls -l installer/backend/build/x64/gk3w.exe installer/backend/build/sdboot/systemd-bootaa64.efi"
 }
 
 function Invoke-InstallerApp {
@@ -111,8 +111,8 @@ function Invoke-InstallerApp {
     git clone --quiet --depth 1 --branch $FlutterVersion https://github.com/flutter/flutter.git 'C:\flutter'
     $flutter = 'C:\flutter\bin\flutter.bat'
   }
-  $win = Join-Path $Installer 'windows'
-  if (Have 'python') { python (Join-Path $Installer 'common\tool\fetch-fonts.py') }
+  $win = Join-Path $Installer 'installer\windows'
+  if (Have 'python') { python (Join-Path $Installer 'installer\common\tool\fetch-fonts.py') }
   Push-Location $win
   try {
     & $flutter --disable-analytics; & $flutter config --enable-windows-desktop

@@ -1,0 +1,19 @@
+# mediaserver 读 minigbm 的调试属性。
+#
+# 证据：普查里 `comm="CodecLooper"` 读
+#   /dev/__properties__/u:object_r:vendor_minigbm_debug_prop:s0 被拒。
+# 起因是 gralloc（minigbm）在 mediaserver 进程内被加载，而它会去读
+# vendor.minigbm.debug —— 本机 device.mk 确实设了这个属性。
+get_prop(mediaserver, vendor_minigbm_debug_prop)
+
+# mediaswcodec 同理（2026-09-18 完整启动日志里 4 条）：gralloc(minigbm) 在它进程内
+# 被加载，同样要读 vendor.minigbm.debug。
+# ⚠️ 这条与上面那条是【同一个根因的两个主体】—— 上一轮只看到 mediaserver，
+#    是因为旧样本滚掉了开机段。
+get_prop(mediaswcodec, vendor_minigbm_debug_prop)
+
+# cameraserver 同理（2026-09-29 第七轮）：相机链里 gralloc mapper（minigbm）在 cameraserver 进程内，
+# 每次开相机读 vendor.minigbm.debug（值 nocompression）。证据：v0.7.0 验收普查
+# `cameraserver vendor_minigbm_debug_prop:file { read open getattr map }  comm=C3Dev-0-ReqQueu`，
+# 第七轮 enforcing 试跑同一条 permissive=0。与上面两条是同一个根因的第三个主体。
+get_prop(cameraserver, vendor_minigbm_debug_prop)

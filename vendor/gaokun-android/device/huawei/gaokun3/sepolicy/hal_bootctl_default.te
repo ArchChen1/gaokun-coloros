@@ -1,0 +1,65 @@
+# 自研 boot_control HAL 要挂 ESP、改 systemd-boot 的 loader.conf。
+#
+# ★ 为什么一个 boot_control HAL 会去挂文件系统：这台机器不是 fastboot 设备，
+#   槽位切换最终要落到 systemd-boot 的启动项上（见 boot_control/ 的说明）。
+#   misc 仍是唯一真相源，ESP 上那份只是镜像。
+#
+# ⚠️ 这组权限（sys_admin + 挂 vfat + 读写 loader.conf）是本设备树里
+#   **最重的一组**。它之所以存在，是因为引导链没有原生消费 misc 的东西 ——
+#   [TODO B3] 的自研 EFI 加载器做出来之后，这个 HAL 就不必碰 ESP 了，
+#   这一整块可以删掉。chainload 已实测可行（#73），所以那条路是通的。
+#
+# 证据：第 4 步普查，scontext=u:r:hal_bootctl_default:s0，逐条对应。
+allow hal_bootctl_default self:capability sys_admin;
+allow hal_bootctl_default tmpfs:dir { create write add_name mounton };
+allow hal_bootctl_default vfat:filesystem { mount unmount };
+allow hal_bootctl_default vfat:dir { search write add_name remove_name };
+# read / open：2026-09-29 起 FindEspDevice 对 by-name 候选也做内容检查（LooksLikeOurEsp 要
+#   opendir loader/entries），policy-query：vfat:dir read / open DENY。
+allow hal_bootctl_default vfat:dir { read open };
+allow hal_bootctl_default vfat:file { create open read write getattr rename unlink };
+
+# ── 2026-09-18 补：块设备那一半此前【整个缺着】────────────────────────────
+#
+# ⚠️★ 上面那组 vfat 规则只管"挂上之后能读写"，没管"能不能打开那个块设备"。
+#    实机 permissive 下 mount 照样成功，所以这个缺口两个多月没露头 ——
+#    ★ 又一次证明：permissive 下"功能正常"不能拿来判断 enforcing 下能否工作。
+#
+# AOSP 给这个域的块设备权限只有 misc（vendor/hal_bootctl_default.te:15-16）：
+#     allow hal_bootctl_default block_device:dir search;
+#     allow hal_bootctl_default misc_block_device:blk_file rw_file_perms;
+# —— 因为正常设备的 boot_control 只碰 misc。本机还要挂 ESP。
+#
+# /dev/block/by-name/esp 是【符号链接】，读它要 lnk_file（打开的是它指向的
+# 真实节点，那是 gaokun3_esp_block_device）。ESP 必须先有专用类型才谈得上
+# 开权限，理由见 device.te 里 domain.te:705 那条 neverallow。
+allow hal_bootctl_default block_device:lnk_file r_file_perms;
+allow hal_bootctl_default gaokun3_esp_block_device:blk_file rw_file_perms;
+# ⓘ 2026-09-29：按 by-name 别名标之后，链接本身也可能拿到分区类型 —— 读它们不用另写：
+#   核心 private/domain.te:70 `allow domain dev_type:lnk_file r_file_perms`，这几个都是 dev_type。
+
+# 2026-09-27：`hal_bootctl_default boot_block_device:blk_file getattr  path=/dev/block/nvme0n1p5`
+# （boot_a；HAL 开机时 stat 两个 boot 槽）。只 getattr，不给读写。
+allow hal_bootctl_default boot_block_device:blk_file getattr;
+
+# ── 2026-10-05：统一启动入口的开机完成线程（boot_control/Gk3Boot.cpp，S9）────────────
+# 部署入口要建 EFI/gk3boot/<ver>/（create）、回收没人引用的旧版本目录（rmdir）、
+# 判断一个名字是不是目录（lstat → getattr）。文件那一半（create / write / rename / unlink）上面已经有了。
+# ⬜ 未编译、未上机；随下一轮 SELinux 在 enforcing 下验证（设计稿 §4.14）。
+allow hal_bootctl_default vfat:dir { create rmdir getattr };
+# misc：Gk3Boot.cpp 用 O_DIRECT 读写偏移 8 KiB 的 GK3 记录 —— 走的就是 AOSP 已给的
+#   misc_block_device rw_file_perms（refs/lineage-sepolicy/vendor/hal_bootctl_default.te:15-16），不用另写。
+# /vendor/boot/gk3boot/{gk3boot.efi,version}：vendor_file，非 coredomain 本来就能读
+#   （refs/lineage-sepolicy/private/domain.te:191-192）。
+# ro.boot.gk3boot.*：bootloader_prop，所有域都能读（private/domain.te:481）。
+# vendor.gaokun3.* 的读写见 sepolicy/vendor_gaokun3_props.te。
+
+# ── 2026-10-05：S15 双系统（boot_control/Gk3Boot.cpp 的"关机标记"）──────────────────────────────
+# rc 的 on shutdown 里 exec 本 HAL 二进制 --gk3-mark-poweroff（经 init_daemon_domain 落在本域），它要读 sys.powerctl
+# 判"是关机还是重启"。powerctl_prop 是 core_property_type，但在"非 coredomain 不许读核心属性"那条 neverallow 的豁免里
+# （refs/lineage-sepolicy/private/property.te:395-412 的 -powerctl_prop；crDroid 树 system/sepolicy/private/property.te:404，2026-10-05 构建机只读核对）。⬜ 未编译（只有编译器能证明没撞别的 neverallow）。
+#   A17：豁免还在（crDroid 17.0 的 private/property.te:412）；2026-10-25 树外 checkpolicy 编整套 A17 策略未撞 neverallow（见 file_contexts 顶部）。
+# 其余不用补：misc 读写（AOSP vendor/hal_bootctl_default.te:15-16）、ro.boot.gk3boot.*（bootloader_prop，所有域可读）、
+# vendor.gaokun3.bootentry.{request,ring,ack,…} 的读写（vendor_gaokun3_props.te 的 get_prop / set_prop）、
+# ESP 上 EFI/Microsoft/Boot/bootmgfw.efi 等的 access / 读（上面 vfat:dir search/read/open、vfat:file read/getattr 已有）。
+get_prop(hal_bootctl_default, powerctl_prop)

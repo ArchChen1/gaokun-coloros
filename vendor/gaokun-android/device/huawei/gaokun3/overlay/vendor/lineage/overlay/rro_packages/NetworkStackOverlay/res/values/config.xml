@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Captive-portal probe endpoints that are actually reachable from China.
+
+  Why this matters more than it looks: if the framework ever concludes a
+  network has no internet, it marks it
+  NETWORK_SELECTION_DISABLED_NO_INTERNET_PERMANENT and will not auto-join it
+  again — and only a fresh user-initiated connection with a password clears
+  that. The stock probes are connectivitycheck.gstatic.com and
+  www.google.com, both unreachable here, so every boot used to poison the
+  saved network. That was stage4 finding #29, and it kept coming back.
+
+  ★ The override has to target config_captive_portal_*_url, NOT
+  default_captive_portal_*_url. NetworkStack says so itself, in
+  packages/modules/NetworkStack/res/values/config.xml:10-15: the default_*
+  strings are deliberately not overlayable and touching them "will break if
+  the enforcement of overlayable starts". The config_* names are the ones
+  listed in that module's <overlayable name="NetworkStackConfig"> block, with
+  policy product|system|vendor.
+
+  This is a build-time overlay *of an existing RRO* rather than a new RRO:
+  crDroid already ships vendor/lineage/overlay/rro_packages/NetworkStackOverlay
+  (it sets config_dhcp_client_hostname), so the packaging, manifest and
+  targetName are already correct and we only add resources to it.
+-->
+<resources>
+    <!--
+      ★ <add-resource> 是必需的，不是可选装饰。
+      DEVICE_PACKAGE_OVERLAYS 是【构建期】overlay：它只能覆盖目标模块资源表里
+      【已经存在】的条目。crDroid 那个 NetworkStackOverlay 自己只定义了
+      config_dhcp_client_hostname，所以直接写这两个 string 会被 aapt2 顶回来：
+          error: resource string/config_captive_portal_http_url
+                 does not override an existing resource.
+          note: define an <add-resource> tag (or the auto-add-overlay flag).
+      加上 add-resource 之后，这两条就成为该 RRO 自己的资源；RRO 在运行时按
+      【资源名】映射到目标包，于是覆盖掉 NetworkStack 的同名条目。
+
+      目标那边确实有这两个资源：NetworkStack res/values/config.xml:41 把
+      config_captive_portal_http_url 定义成【空字符串】，
+      NetworkMonitor.java:2671-2674 的逻辑是 config_* 非空就用它、
+      否则回落 default_*。所以填上非空值就生效。
+    -->
+    <add-resource type="string" name="config_captive_portal_http_url" />
+    <add-resource type="string" name="config_captive_portal_https_url" />
+
+    <string name="config_captive_portal_https_url" translatable="false">https://connect.rom.miui.com/generate_204</string>
+    <string name="config_captive_portal_http_url" translatable="false">http://connect.rom.miui.com/generate_204</string>
+
+    <!--
+      v1.0 NET-10：联网检测加备用端点（2026-10-05，构建机 packages/modules/NetworkStack 核实）。
+      上面两条单 URL 只有一个探测地址：connect.rom.miui.com 一旦不可达，每次开机都会把已保存的网络判成
+      "无互联网"（#29 那个坑又回来）。
+      * 资源：res/values/config.xml:46-53 的 config_captive_portal_{https,http,fallback}_urls（string-array，默认空），
+        都在 overlayable "NetworkStackConfig" 里（overlayable.xml:42-44）。与上面同理要 add-resource。
+      * 生效方式：getProbeUrlArrayConfig 里【资源优先】，资源数组非空就不用单 URL 与 Settings 里的值
+        （NetworkMonitor.java:2856-2871）。数组里不止一个 URL 时改走 sendMultiParallelHttpAndHttpsProbes
+        （:2987-2990、:3460 起）：所有 URL 并行探测，evaluateCapportResult 汇总，任何一个 HTTPS 204 即判通。
+        ⇒ 第一项仍是原来的 miui，第二项是华为自己的 connectivitycheck（这台本来就是华为机器）。
+      * fallback_urls：只在 HTTPS/HTTP 各一个 URL 时用（:2983-2986 的 sendHttpAndHttpsParallelWithFallbackProbes），
+        数组模式下用不到；仍替掉默认的 www.google.com / play.googleapis.com（:33-36，国内不通），以防将来回到单 URL 模式。
+      * URL 里不能有逗号（:44-45）。
+      ⓘ 端点可达性：2026-10-05 从本机（Mac，国内网络，但经本机 Clash TUN —— remote_ip 是 198.18.x 假 IP，
+        所以不能证明直连可达）curl 过：connect.rom.miui.com、connectivitycheck.platform.hicloud.com、www.qualcomm.cn
+        的 http / https /generate_204 都回 204、内容长度 0。⬜ 平板上直连复测。
+      判据：`dumpsys network_stack` 里 NetworkMonitor 的 https/http URL 列表是这两项；
+        用 iptables 临时拒掉 connect.rom.miui.com 的地址后 Wi-Fi 仍显示已连接且可上网。
+    -->
+    <add-resource type="array" name="config_captive_portal_https_urls" />
+    <add-resource type="array" name="config_captive_portal_http_urls" />
+    <add-resource type="array" name="config_captive_portal_fallback_urls" />
+    <string-array name="config_captive_portal_https_urls" translatable="false">
+        <item>https://connect.rom.miui.com/generate_204</item>
+        <item>https://connectivitycheck.platform.hicloud.com/generate_204</item>
+    </string-array>
+    <string-array name="config_captive_portal_http_urls" translatable="false">
+        <item>http://connect.rom.miui.com/generate_204</item>
+        <item>http://connectivitycheck.platform.hicloud.com/generate_204</item>
+    </string-array>
+    <string-array name="config_captive_portal_fallback_urls" translatable="false">
+        <item>http://www.qualcomm.cn/generate_204</item>
+        <item>http://connectivitycheck.platform.hicloud.com/generate_204</item>
+    </string-array>
+</resources>

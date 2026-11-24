@@ -1,0 +1,37 @@
+name: Other / 其他
+description: Development plans, questions about the design, or anything the other forms do not cover. / 开发计划、关于设计的问题，或者其他表单都不合适的内容。
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For quick questions, the Telegram channel and the QQ group usually answer faster. If you would like to work on something, it helps to check [docs/TODO.md](https://github.com/vahiru/gaokun-android/blob/main/docs/TODO.md) first; many items there already describe the next step.
+        简单的问题在Telegram频道或QQ群里通常能更快得到回复。如果你想参与开发，可以先看看[docs/TODO.md](https://github.com/vahiru/gaokun-android/blob/main/docs/TODO.md)，很多条目已经写好了下一步。
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind / 类型
+      options:
+        - I would like to work on something / 我想参与开发某项内容
+        - A proposal / 提案
+        - A question about the design / 关于设计的问题
+        - Something else / 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: Details / 详细说明
+      description: |
+        For development plans and proposals, it helps to describe the goal, what you already know about how it could work on this machine (related code, kernel logs, existing documents), and a first step whose result can be checked on the device.
+        如果是开发计划或提案，建议写明目标、你对它在本机上如何实现已经了解到的情况（相关代码、内核日志、已有文档），以及第一个能在设备上验证结果的步骤。
+    validations:
+      required: true
+
+  - type: input
+    id: related
+    attributes:
+      label: Related item / 相关条目
+      description: Optional. A related issue, pull request or item in docs/TODO.md. / 可选。相关的issue、PR或docs/TODO.md里的条目。

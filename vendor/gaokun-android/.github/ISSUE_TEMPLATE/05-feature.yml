@@ -1,0 +1,40 @@
+name: Feature request / 功能建议
+description: Something you would like the system to do that it cannot do today. / 希望系统支持某项现在还不支持的功能。
+labels: ["feature-request", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the suggestion. The [status table](https://github.com/vahiru/gaokun-android#status) and [docs/TODO.md](https://github.com/vahiru/gaokun-android/blob/main/docs/TODO.md) show what is supported and what is already planned; please take a look first.
+        感谢你的建议。目前支持哪些功能、哪些已经在计划中，可以先看看[现状表](https://github.com/vahiru/gaokun-android/blob/main/README.zh-CN.md#现状)和[docs/TODO.md](https://github.com/vahiru/gaokun-android/blob/main/docs/TODO.md)。
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like / 你希望实现什么
+      placeholder: "A quick settings tile to switch between 60 Hz and 120 Hz. / 在快捷设置里加一个60 Hz与120 Hz切换的开关。"
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why / 原因
+      description: How you would use it, and what you do today instead. / 你会怎么用它，以及现在是怎么解决的。
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References / 参考资料
+      description: Optional. For example, the same feature on another device, related code or documentation. / 可选。例如其他设备上的同类功能、相关代码或文档。
+
+  - type: dropdown
+    id: help
+    attributes:
+      label: Can you help? / 能否参与
+      options:
+        - I can test it on my machine / 可以在我的机器上测试
+        - I would like to work on it myself / 我想自己来实现
+        - Not at the moment / 暂时不能

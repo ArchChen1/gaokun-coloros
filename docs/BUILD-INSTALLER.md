@@ -1,7 +1,7 @@
 # 构建安装器
 
 安装器是 **Flutter Windows 应用 + C 后端**，两条工具链分居两个系统，所以必须由 Windows 侧编排、WSL 侧交叉编后端。
-安装器源码已整棵放在 `installer/app/`（不依赖外部仓库，见 `installer/UPSTREAM.md`），一条命令跑完：
+安装器源码已整棵仓库放在 `vendor/gaokun-android/`（不依赖外部仓库，见 `installer/UPSTREAM.md`），一条命令跑完：
 
 ```powershell
 git clone https://github.com/ArchChen1/gaokun-coloros.git
@@ -27,13 +27,13 @@ cd gaokun-coloros
 
 `build.ps1 -Target installer` 等价于 CI（`.github/workflows/ego-installer-x64.yml`）的本地版：
 
-1. **WSL**：确认/下载 llvm-mingw → `make -C installer/app/backend test`（主机单测）
-2. **WSL**：`make -C installer/app/backend win-x64 sdboot GK3W_VERSION=dev-<sha>` → `gk3w.exe`、`systemd-bootaa64.efi`
-3. **WSL**：`bash installer/app/backend/mke2fs/build.sh x64` → `mke2fs.exe`、`mke2fs.conf`（Debian 源码 + 补丁）
+1. **WSL**：确认/下载 llvm-mingw → `make -C installer/backend test`（主机单测，当前 410 项全过）
+2. **WSL**：`make -C installer/backend win-x64 sdboot GK3W_VERSION=dev-<sha>` → `gk3w.exe`、`systemd-bootaa64.efi`
+3. **WSL**：`bash installer/backend/mke2fs/build.sh x64` → `mke2fs.exe`、`mke2fs.conf`（Debian 源码 + 补丁）
 4. **Windows**：拉字体 → `flutter pub get` → `flutter build windows --release --dart-define=GK3_VERSION=dev-<sha>`
 5. 校验 Release 目录里五个必需文件都在（`gk3_windows.exe`、`backend\{gk3w.exe,mke2fs.exe,mke2fs.conf,systemd-bootaa64.efi}`）
 
-产物：`installer/app/windows/build/windows/x64/runner/Release`
+产物：`vendor/gaokun-android/installer/windows/build/windows/x64/runner/Release`
 
 ## ARM64（原生平板），在 CI 里
 
@@ -42,7 +42,7 @@ cd gaokun-coloros
 要做原生 ARM64：仓库转公开或给组织开 ARM 运行器。
 
 ## 补丁在哪
-安装器侧的两条改动已包含在 `installer/app`（复制自 `685c842`）：
+安装器侧的两条改动已包含在 `vendor/gaokun-android`（复制自 `685c842`）：
 - `GK3W_SUPER_MIB` 12288 → **20480**
 - 启动项标题改 `ColorOS 17.0.1`
 补丁原文另存在 `installer/patches/`（供 rebase 参考）。
@@ -54,4 +54,4 @@ cd gaokun-coloros
 | `Release 缺 backend\gk3w.exe` | 后端产物没被 Flutter 阶段复制；先确认第 2、3 步成功，再重跑 `flutter build` |
 | `mke2fs/build.sh` 失败 | 它要拉 Debian e2fsprogs 源码并打 `patches/e2fsprogs`，需要网络 |
 | Flutter 报找不到 VS | 装 VS2022 时勾“使用 C++ 的桌面开发” |
-| 想只编后端 | `wsl make -C installer/app/backend win-x64` |
+| 想只编后端 | `wsl make -C vendor/gaokun-android/installer/backend win-x64` |

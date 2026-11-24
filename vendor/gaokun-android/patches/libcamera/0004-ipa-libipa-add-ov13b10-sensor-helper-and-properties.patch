@@ -1,0 +1,62 @@
+From: Akisaira <akisaira@outlook.com>
+Subject: [PATCH] libcamera: ipa: libipa: add sensor helper and static properties for OmniVision OV13B10
+
+Add a CameraSensorHelper (linear analogue gain model gain = code / 128 and
+10-bit black level 64 scaled to 4096) and CameraSensorProperties entry (1.12 um
+unit cell size and test pattern modes) for the OmniVision OV13B10 rear camera
+sensor.
+
+Origin: local
+Upstream-Status: Pending
+---
+diff --git a/src/ipa/libipa/camera_sensor_helper.cpp b/src/ipa/libipa/camera_sensor_helper.cpp
+index ea474ad..dc84ab1 100644
+--- a/src/ipa/libipa/camera_sensor_helper.cpp
++++ b/src/ipa/libipa/camera_sensor_helper.cpp
+@@ -532,6 +532,23 @@ public:
+ };
+ REGISTER_CAMERA_SENSOR_HELPER("hi846", CameraSensorHelperHi846)
+ 
++class CameraSensorHelperOv13b10 : public CameraSensorHelper
++{
++public:
++	CameraSensorHelperOv13b10()
++	{
++		/*
++		 * gaokun3 rear camera. Gain model from the kernel driver's
++		 * definitions (ov13b10.c: OV13B10_ANA_GAIN_MIN 0x80 = 1x, step 1),
++		 * i.e. gain = code / 128. Black level 64 at 10 bits is the usual
++		 * OmniVision BLC target and has NOT been measured on this module.
++		 */
++		blackLevel_ = 4096;
++		gain_ = AnalogueGainLinear{ 1, 0, 0, 128 };
++	}
++};
++REGISTER_CAMERA_SENSOR_HELPER("ov13b10", CameraSensorHelperOv13b10)
++
+ class CameraSensorHelperHm1246 : public CameraSensorHelper
+ {
+ public:
+diff --git a/src/libcamera/sensor/camera_sensor_properties.cpp b/src/libcamera/sensor/camera_sensor_properties.cpp
+index 20cfd0b..d5e053e 100644
+--- a/src/libcamera/sensor/camera_sensor_properties.cpp
++++ b/src/libcamera/sensor/camera_sensor_properties.cpp
+@@ -132,6 +132,18 @@ const CameraSensorProperties *CameraSensorProperties::get(const std::string &sen
+ 				.hblankDelay = 2
+ 			},
+ 		} },
++		{ "ov13b10", {
++			.unitCellSize = { 1120, 1120 },
++			.testPatternModes = {
++				{ controls::draft::TestPatternModeOff, 0 },
++				{ controls::draft::TestPatternModeColorBars, 1 },
++				/*
++				 * 2-4 are further vertical colour bar variants
++				 * ("Type 2".."Type 4" in the kernel driver) with no
++				 * libcamera equivalent.
++				 */
++			},
++		} },
+ 		{ "hi846", {
+ 			.unitCellSize = { 1120, 1120 },
+ 			.testPatternModes = {

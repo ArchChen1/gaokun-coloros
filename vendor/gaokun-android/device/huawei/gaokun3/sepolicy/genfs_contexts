@@ -1,0 +1,132 @@
+# 第 3 步：sysfs 路径打标签。
+#
+# ★ 为什么需要：AOSP 的 genfs_contexts 只标了 /class/... 与 /devices/virtual/...
+#   （见 system/sepolicy/private/genfs_contexts:134,143,156,158），
+#   而 /sys/class/xxx/yyy 是【符号链接】，SELinux 标的是真实 inode ——
+#   也就是 /sys/devices/platform/... 那条路径。手机 SoC 的那些路径 AOSP 顺手
+#   覆盖了，本机 sc8280xp 的没有。这又是"AOSP on mainline"独有的缺口。
+#
+# ⚠️ 每一条都来自 2026-08-23 实机普查里的 path=，不是推测。
+#    genfscon 是前缀匹配，所以尽量取到最具体的那一层，别把整个 soc@0 都盖了。
+#
+# ★ 标对之后【不需要写任何 allow】：AOSP 核心策略里
+#   `allow hal_health_default sysfs_batteryinfo:file r_file_perms` 之类全都现成。
+
+# ── 电池：hal_health_default 被拒 235 次 ────────────────────────────────
+# path=".../huawei_gaokun_ec.psy.0/power_supply/gaokun-ec-battery/capacity"
+genfscon sysfs /devices/platform/soc@0/ac0000.geniqup/a9c000.i2c/i2c-15/15-0038/huawei_gaokun_ec.psy.0/power_supply u:object_r:sysfs_batteryinfo:s0
+# UCSI 的电源（充电器在不在）—— 同一个 EC，另一个子设备
+genfscon sysfs /devices/platform/soc@0/ac0000.geniqup/a9c000.i2c/i2c-15/15-0038/huawei_gaokun_ec.ucsi.0/power_supply u:object_r:sysfs_batteryinfo:s0
+
+# ── 网络：network_stack 被拒 236 次，全是 wlan0/mtu ─────────────────────
+# 本机 WiFi 挂在 PCIe 上（ath11k），所以真实路径在 pcie 那一支下面
+genfscon sysfs /devices/platform/soc@0/1c00000.pcie/pci0006:00/0006:00:00.0/0006:01:00.0/net u:object_r:sysfs_net:s0
+
+# ── 背光：我们自己的亮度 HAL 要写它 ─────────────────────────────────────
+# denial 里是 comm="android.hardwar" name="brightness"。
+# ⚠️ 这条在第 1 步之前显示为 scontext=u:r:init:s0（HAL 没有域）；
+#    打完标签之后它会变成 hal_light_default，而 AOSP 已经允许该域读写 sysfs_leds。
+genfscon sysfs /devices/platform/soc@0/ae00000.display-subsystem/ae96000.dsi/ae96000.dsi.0/backlight u:object_r:sysfs_leds:s0
+
+# ── 唤醒源：system_suspend 被拒读 xhci 的 wakeup 节点 ───────────────────
+# path=".../a600000.usb/xhci-hcd.5.auto/wakeup/wakeup52/name"
+# ⚠️ wakeup 目录在很多设备下都有，这里只标有证据的那一处。
+#    以后普查再发现别的，照样一条一条加 —— 别图省事去标整个 /devices/platform。
+# ⓘ 2026-09-29：xhci-hcd.N 的编号是动态的（port0 切 host 时才出现，N 不固定），这一行只盖 .5 那一次。
+#   真正兜底的是 file_contexts 里 wakeup 那条正则（ueventd restorecon，已上机验证 50/50）。
+#   留着无害；等一次带 host 切换的 enforcing 试跑确认 system_suspend 没有 sysfs denial 再删。
+genfscon sysfs /devices/platform/soc@0/a6f8800.usb/a600000.usb/xhci-hcd.5.auto/wakeup u:object_r:sysfs_wakeup:s0
+
+# 后摄闪光灯 LED（PM8350C 闪光模块，patches/kernel/dts/0006）。/sys/class/leds 只是符号链接，标签要打在
+# 真实 inode 路径上（同 backlight 那条的教训，#77）。打上 sysfs_leds 之后 hal_camera_default.te
+# 里那两条 allow 才有对象。路径来自实机 readlink -f /sys/class/leds/white:flash。
+genfscon sysfs /devices/platform/soc@0/c440000.spmi/spmi-0/0-02/c440000.spmi:pmic@2:led-controller@ee00/leds u:object_r:sysfs_leds:s0
+
+# ── 温控：自研 thermal HAL 被拒 35 次（2026-09-18 实机）────────────────────
+# path="/sys/devices/virtual/thermal/thermal_zone0/temp"，tcontext 是通用 sysfs。
+# sysfs_thermal 是 AOSP 的公共类型（public/file.te:171），但核心策略【没给它
+# 写任何 genfscon】—— 温区路径各家 SoC 不同，AOSP 把标注留给设备树。
+# 两条都要：/sys/class/thermal 是 HAL opendir 的入口，/sys/devices/virtual/thermal
+# 才是真实 inode。这正是 AOSP 自己对 wakeup 的写法（上面 :138 与 :151 两条）。
+# ⚠️ 与上面几条不同，标对之后【还要写 allow】—— 见 sepolicy/hal_thermal_default.te，
+#    核心策略里有 sysfs_thermal 规则的只有 system_server 与 recovery。
+genfscon sysfs /class/thermal                     u:object_r:sysfs_thermal:s0
+genfscon sysfs /devices/virtual/thermal           u:object_r:sysfs_thermal:s0
+
+# ── 唤醒源：system_suspend 读 wakeup 节点（2026-09-18 实机，6 条）──────────
+#
+# ⚠️★★ 这一组推翻了 #117 第 10 条的结论。当时我量出"system_suspend 一条 denial
+#    都没有"，据此把那个 ⬜ 改写成"语义不对但当前无后果"。**那个测量是错的** ——
+#    旧机器的 dmesg 早期启动已经滚掉，而 system_suspend 恰恰只在开机时枚举一次
+#    /sys/class/wakeup。换成完整启动历史，它清清楚楚地读，而且被拒：
+#      4 条 → tcontext=sysfs           （谁也没标的那些）
+#      2 条 → tcontext=sysfs_batteryinfo（被我们 power_supply 的 genfscon 盖住的）
+#
+# ★ 修法的关键是一条容易被误解的语义：**genfscon 是【字符串前缀】匹配，
+#   不是路径分量匹配** —— 所以 `.../wakeup` 这个前缀能盖住 `.../wakeup21`、
+#   `.../wakeup23`。AOSP 自己那条 `/devices/virtual/wakeup` 正是这么用的。
+#   动态编号因此不再是障碍，父目录静态就够了。
+#
+# ⚠️ 这是按【观测到的】三处写的，不是普查全部唤醒源 —— 本机还有 mhi0 等没被读到，
+#    读到了再加。别图省事去标整个 /devices/platform（会盖掉一大片无关节点）。
+genfscon sysfs /devices/platform/soc@0/c265000.thermal-sensor/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/c440000.spmi/spmi-0/0-00/c440000.spmi:pmic@0:pon@1300/c440000.spmi:pmic@0:pon@1300:pwrkey/wakeup u:object_r:sysfs_wakeup:s0
+# ★ 这条比上面 power_supply 那条【更长】，所以它赢 —— 正是它把 wakeup23 从
+#   sysfs_batteryinfo 手里抢回来标成 sysfs_wakeup。
+genfscon sysfs /devices/platform/soc@0/ac0000.geniqup/a9c000.i2c/i2c-15/15-0038/huawei_gaokun_ec.ucsi.0/power_supply/ucsi-source-psy-huawei_gaokun_ec.ucsi.01/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/ac0000.geniqup/a9c000.i2c/i2c-15/15-0038/huawei_gaokun_ec.ucsi.0/power_supply/ucsi-source-psy-huawei_gaokun_ec.ucsi.02/wakeup u:object_r:sysfs_wakeup:s0
+
+# ── 2026-09-27 第六轮：完整开机普查 + 运行期 enforcing 试跑查出的（#126）──────────────
+
+# libdrm 的 drmGetDevice2 读 DRM 设备的 uevent（OF_FULLNAME / OF_COMPATIBLE）。
+# 证据：surfaceflinger / bootanim / system_app / platform_app 各 3 条
+#   sysfs:file { read open getattr } path=…/ae01000.display-controller/uevent
+# ★ 只标【这一个文件】，不标整个 display-controller：
+#   * sysfs_gpu 的【文件】读权限核心策略给了正是这批主体（app.te:395 含 untrusted_app ——
+#     游戏里的 turnip 枚举 GPU 走的也是这条；bootanim.te:37、surfaceflinger.te:42、system_server.te:495），
+#   * 但 sysfs_gpu 的【目录】search 它们都没有（设备上 /sys/fs/selinux/access 实测 DENY），
+#     标整个目录反而会把 SF 挡在外面。genfscon 是字符串前缀，`…/uevent` 只命中这一个文件。
+#   * 路径上的符号链接不受影响：本机策略 genfs_seclabel_symlinks=0，链接一律保持 sysfs。
+# （dragonboard 标的是整个 ae00000.display-subsystem，再给每个客户端补 sysfs_gpu:dir search。）
+genfscon sysfs /devices/platform/soc@0/ae00000.display-subsystem/ae01000.display-controller/uevent u:object_r:sysfs_gpu:s0
+
+# 亮度 HAL 开机 opendir(/sys/class/backlight) 找面板背光（sysfs:dir { read open }）。
+# 核心策略只标了 /class/leds（private/genfs_contexts:130），背光类目录没人管。
+# hal_light_default 对 sysfs_leds 的 dir read / lnk_file read 现成（设备上实测 ALLOW）。
+genfscon sysfs /class/backlight u:object_r:sysfs_leds:s0
+
+# init.rc:1224-1225 写 discard_max_bytes（类型与理由见 device.te）。
+genfscon sysfs /devices/platform/soc@0/1c20000.pcie/pci0002:00/0002:00:00.0/0002:01:00.0/nvme/nvme0/nvme0n1/queue/discard_max_bytes u:object_r:gaokun3_sysfs_disk_queue:s0
+
+# ── 唤醒源：本机 19 个还是通用 sysfs 的里，路径固定的这 16 个直接写死 ──────────────
+# （2026-09-27 实测清单；动态编号的那几个靠 file_contexts 里的正则 + ueventd restorecon）
+# 证据：system_suspend 读 …/gpio-keys/wakeup/wakeup18/name 被拒 —— 同一个
+#   (system_suspend, sysfs, file, read) 只记一次，所以其余 18 个是枚举出来的，不是日志里看到的。
+genfscon sysfs /devices/platform/gpio-keys/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/1b300000.remoteproc/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/2400000.remoteproc/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/3000000.remoteproc/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/1c00000.pcie/pci0006:00/0006:00:00.0/0006:01:00.0/mhi0/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/a4f8800.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/a4f8800.usb/a400000.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/a6f8800.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/a6f8800.usb/a600000.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/a8f8800.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/a8f8800.usb/a800000.usb/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/ac0000.geniqup/a9c000.i2c/i2c-15/15-0038/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/c251000.thermal-sensor/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/c252000.thermal-sensor/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/c263000.thermal-sensor/wakeup u:object_r:sysfs_wakeup:s0
+genfscon sysfs /devices/platform/soc@0/c440000.spmi/spmi-0/0-00/c440000.spmi:pmic@0:rtc@6100/wakeup u:object_r:sysfs_wakeup:s0
+
+# efivarfs：见 file.te（没有它时文件是 unlabeled，enforcing 下建不了新变量）
+genfscon efivarfs / u:object_r:gaokun3_efivarfs:s0
+
+# ── 手写笔电量（M-Pencil）───────────────────────────────────────────────
+# 触摸从片驱动（patches/kernel/input/0011）注册的 power supply 故意不挂父设备，所以在 virtual 下：
+# Android 为输入设备找电池时，从设备节点往上找最近的 power_supply 目录，
+# 而 gk3pend 的 uinput 笔在 /sys/devices/virtual。读它的是 system_server 与 health HAL。
+genfscon sysfs /devices/virtual/power_supply/m-pencil u:object_r:sysfs_gaokun3_pen_battery:s0
+
+# Kernel release reported to apps (patches/kernel/core/0008).
+genfscon proc /sys/kernel/app_osrelease u:object_r:gaokun3_proc_app_osrelease:s0

@@ -1,0 +1,52 @@
+# gaokun3 专有的设备类型。
+#
+# 这几个节点在整棵 AOSP 策略里都没有对应类型 —— 和 /dev/dri 是同一类缺口：
+# AOSP 从没设想过"跑在主线内核上的 Android"，也没设想过 ESP 是个要被挂载的分区。
+
+# hexagonrpcd 用它跟 SLPI 上的 DSP 说话（传感器整条链的地基）
+type gaokun3_fastrpc_device, dev_type;
+
+# ⚠️ /dev/mem。定义类型是为了让访问【显式可见】，不是为了开权限：
+#    现在没有任何域被 allow 到它。见 sepolicy/file_contexts 里的说明与 #75。
+type gaokun3_devmem_device, dev_type;
+
+# ── ESP（/dev/block/by-name/esp 或 EFI_system_partition）────────────────────────────────────────────
+# ⚠️★ 这不是"顺手也给它个类型"：核心策略里有一条【加 allow 也绕不过去】的
+#    neverallow —— system/sepolicy/private/domain.te:705
+#       neverallow { domain -kernel -init -recovery } block_device:blk_file { open read write };
+#    也就是说：只要 ESP 还挂着通用的 block_device 标签，boot_control HAL 与
+#    OTA 的 postinstall 就【永远】打不开它，写多少 allow 都没用，写了还会
+#    让 sepolicy_neverallows 直接构建失败。必须先换成专用类型。
+#    （AOSP 自己的 hal_bootctl_default.te:15-16 就是这么做的：misc 分区给
+#     misc_block_device，只 search 通用的 block_device 目录。）
+#
+# 2026-09-29 起 file_contexts 按 by-name 别名打标签，不再写死分区号（原先写死的是
+#    开发机的老布局，v0.7.0 安装器建的盘对不上 —— 见 file_contexts 那一节）。
+type gaokun3_esp_block_device, dev_type;
+
+# ── /vendor/firmware：内核直读固件（firmware_class.path=/vendor/firmware/）──────
+# ⚠️★★★ 2026-09-27 查出：这整棵树此前挂的是通用 vendor_file，而核心策略里 kernel 对
+#    vendor_file【没有任何读权限】（private/kernel.te 一条 vendor_file 规则都没有），
+#    新内核还多一道 `system firmware_load` 检查（构建机 private/access_vectors:379，
+#    refs 里那份旧的还没有这一位）。设备上用 /sys/fs/selinux/access 直接问内核：
+#      kernel vendor_file:file read / open / system firmware_load 全是 DENY。
+#    ⇒ enforcing 下 GPU（a660_sqe/gmu/zap）、WiFi（ath11k）、蓝牙（qca）、
+#      三颗 DSP（*.mbn）的固件【全部】加载失败。permissive 下只留一行 denial。
+#    用户态没人读这棵树（实测：/proc/*/fd 与设备树脚本里都没有），所以换专用类型
+#    只影响内核。规则在 sepolicy/kernel.te。
+#    （dragonboard 的做法是直接放行 kernel 读 vendor_file —— 它的策略里没有
+#     firmware_load，说明它没在这么新的内核 + 策略组合上 enforcing 跑过。）
+type gaokun3_firmware_file, vendor_file_type, file_type;
+
+# ── NVMe 盘的块队列参数（…/nvme0n1/queue/discard_max_bytes）────────────────
+# AOSP 自己的 init.rc:1224-1225 要写它（经 /dev/sys/block/by-name/{userdata,rootdisk}），
+# 但 init 能写的 sysfs 类型清单里（private/init.te:592-601）没有任何块设备类型，
+# 通用 sysfs 也不在里面。给这一个文件专用类型，规则在 sepolicy/init.te。
+type gaokun3_sysfs_disk_queue, fs_type, sysfs_type;
+
+# Kernel release reported to apps (patches/kernel/core/0008): init.gaokun3.rc writes it during boot.
+# The rule is in sepolicy/vendor_init.te.
+type gaokun3_proc_app_osrelease, fs_type, proc_type;
+
+# 手写笔：触摸从片驱动（patches/kernel/input/0011）的 /dev/gk3_pen，只有 gk3pend 读写
+type gaokun3_pen_device, dev_type;

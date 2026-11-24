@@ -1,7 +1,7 @@
 # 安装器源码（vendored）
 
-本目录 `app/` 是**从上游整棵子树复制进来的源码**，不是子模块。这样本仓库克隆下来就自带安装器源码，
-不再依赖另一个仓库存在与否（那种单点一旦被删，clone 就编不了）。
+安装器不是子模块，源码**整棵仓库**直接放在 `vendor/gaokun-android/`：克隆本仓库就自带安装器，
+不依赖另一个仓库是否还存在（那种单点一旦被删或转私有，clone 就编不了）。
 
 ## 来源
 
@@ -10,52 +10,52 @@
 | 上游仓库 | `https://github.com/vahiru/gaokun-android`（GPL-3.0） |
 | 派生仓库 | `https://github.com/ArchChen1/ego-gaokun-installer` |
 | 复制时的提交 | `685c842`（`fix(installer): 允许 super.img 稀疏镜像并修正 20 GiB 文案`） |
-| 复制范围 | 仅 `installer/` 子树（`app/`），404 个文件、3.0 MB |
+| 复制范围 | 仓库根除 `.git` 外全部：`installer/`、`tools/`（含 `gk3boot/core`）、`scripts/`、`device/`、`manifests/`、`patches/`、`docs/`、`.github/`、`installer-ego/` |
+| 规模 | 1,397 个文件、17.5 MB |
 | 复制时间 | 2026-11-24 |
 
-`app/` 里已经包含本项目的两条改动（提交在派生仓库里，不是另打的补丁）：
-- `backend/src/plan.h`：`GK3W_SUPER_MIB` 12288 → **20480**
+为什么要整棵：后端 Makefile 里 `CORE := ../../tools/gk3boot/core`，各脚本用 `../../..` 当仓库根，
+只搬 `installer/` 会立刻断链（实测 `No rule to make target '../../tools/gk3boot/core/include/gk3core.h'`）。
+
+## 已含的本项目改动
+
+- `installer/backend/src/plan.h`：`GK3W_SUPER_MIB` 12288 → **20480**
 - 启动项标题 → `ColorOS 17.0.1`
 
-`patches/` 里另有这两条补丁的原文，供将来跟上游 rebase 时参考。
+补丁原文另存 `patches/`，供将来与上游 rebase 时对照。
 
 ## 许可
 
-上游 GPL-3.0：**本仓库中 `installer/app/` 部分及其衍生物必须继续以 GPL-3.0 分发**。
-`installer/app/` 下的源码如与原仓库有 LICENSE 文件，以该文件为准；没有的话按 GPL-3.0 处理。
+GPL-3.0。`vendor/gaokun-android/` 及其衍生物必须继续以 GPL-3.0 分发；若原仓带 `LICENSE`，以该文件为准。
 
-## 怎么跟上游同步
-
-不要用子模块，直接用一次性的导入脚本（保留本地改动、丢弃上游历史）：
+## 与上游同步
 
 ```bash
-# 1. 拉一份干净的上游（或派生仓库）到临时目录
 git clone --depth 1 https://github.com/ArchChen1/ego-gaokun-installer.git /tmp/ego-inst
+rsync -a --delete --exclude .git /tmp/ego-inst/ vendor/gaokun-android/
+git -C /tmp/ego-inst rev-parse --short HEAD      # 更新本文档的“复制时的提交”
+```
 
-# 2. 覆盖式导入，然后人工 review 差异
-rsync -a --delete /tmp/ego-inst/installer/ installer/app/
+导入后必须跑构建验证，不认“看起来没冲突”：
 
-# 3. 记下新的上游提交号
-git -C /tmp/ego-inst rev-parse --short HEAD    # 更新本文件的“复制时的提交”
-
-# 4. 构建验证（后端主机单测 + Flutter 构建）
+```powershell
 .\build.ps1 -Target installer
+wsl make -C vendor/gaokun-android/installer/backend test   # 至少后端单测
 ```
 
-要求：每次导入都要跑一遍 `.\build.ps1 -Target installer`，只认产物，不认“看起来没冲突”。
-
-## 目录速查
+## 目录
 
 ```
-installer/
-├── app/
-│   ├── backend/           C 后端（gk3w、mke2fs 构建、sdboot 取包）
-│   ├── common/            共享 Dart 代码 + 字体拉取脚本
-│   ├── live/              LiveCD 安装器（暂缓）
-│   ├── windows/           Flutter Windows 应用（runner + UI）
-│   └── tools/             辅助工具
-├── patches/               两条改动补丁原文（rebase 参考）
-├── tools/make_release.py  发布目录自检（boot/super/sparse/20 GiB）
-├── README.md              本目录说明
-└── UPSTREAM.md            本文件：来源、许可、同步流程
+vendor/gaokun-android/
+├── installer/
+│   ├── backend/     C 后端（gk3w.exe、mke2fs、sdboot）；`make -C installer/backend test|win-x64`
+│   ├── common/      共享 Dart + fetch-fonts.py
+│   ├── windows/     Flutter Windows 应用
+│   ├── live/        LiveCD 安装器（暂缓）
+│   └── tools/
+├── tools/gk3boot/core/   后端依赖的共享 C 核心（GPT/CRC32/boot.img/misc 盘上格式）
+├── scripts/ device/ manifests/ patches/ docs/ .github/
+└── installer-ego/  安装器适配说明与补丁
 ```
+
+本单位置的 `installer/` 只放本项目自己的东西：`UPSTREAM.md`、`patches/`、`tools/make_release.py`。

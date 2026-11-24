@@ -1,0 +1,1051 @@
+From d984e97260ddaa599e371473ed73a9922c779a98 Mon Sep 17 00:00:00 2001
+From: ego <ego@local>
+Date: Mon, 23 Nov 2026 21:37:45 +0800
+Subject: [PATCH] =?UTF-8?q?EGO:=20super=20=E6=94=B9=E4=B8=BA=2020=20GiB?=
+ =?UTF-8?q?=EF=BC=88=E5=8F=8C=E6=A7=BD=209.3=20GiB=20x=202=20+=20=E4=BD=99?=
+ =?UTF-8?q?=E9=87=8F=EF=BC=89=EF=BC=8C=E5=8D=95=E6=B5=8B=E4=B8=8E=E6=96=87?=
+ =?UTF-8?q?=E6=A1=A3=E5=90=8C=E6=AD=A5?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .github/workflows/ego-installer-x64.yml       |  91 +++++
+ installer-ego/README.md                       |  85 ++++
+ installer-ego/patches/0001-EGO.patch          | 362 ++++++++++++++++++
+ ...rOS-17.0.1-alpha-v1-check_install.py.patch | 184 +++++++++
+ installer-ego/tools/make_release.py           | 161 ++++++++
+ installer/backend/src/plan.h                  |   3 +-
+ installer/backend/test/test_stage2.c          |  39 +-
+ 7 files changed, 906 insertions(+), 19 deletions(-)
+ create mode 100644 .github/workflows/ego-installer-x64.yml
+ create mode 100644 installer-ego/README.md
+ create mode 100644 installer-ego/patches/0001-EGO.patch
+ create mode 100644 installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-alpha-v1-check_install.py.patch
+ create mode 100644 installer-ego/tools/make_release.py
+
+diff --git a/.github/workflows/ego-installer-x64.yml b/.github/workflows/ego-installer-x64.yml
+new file mode 100644
+index 0000000..ecd9ad2
+--- /dev/null
++++ b/.github/workflows/ego-installer-x64.yml
+@@ -0,0 +1,91 @@
++# 说明：上游的 installer-windows.yml 用 windows-11-arm 运行器（私有仓库拿不到 ARM 运行器），
++# 这里给私有仓库准备一条 x64 备用流水线：产物是 x64 的 Windows 安装器，在平板的 Windows 侧
++# 由 Windows-on-ARM 的 x64 模拟运行（功能相同，启动稍慢）。
++# 发布时若要用原生 ARM64 版，把仓库转公开或给组织开 ARM 运行器，直接用上游的 installer-windows.yml。
++
++name: EGO installer (x64)
++
++on:
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++env:
++  FLUTTER_VERSION: '3.47.2'
++  PYTHONUTF8: '1'
++  LLVM_MINGW_NAME: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
++  LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
++
++jobs:
++  backend:
++    name: gk3w + mke2fs + systemd-boot (x64)
++    runs-on: ubuntu-24.04
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - name: llvm-mingw
++        run: |
++          curl -fsSL --retry 3 -o /tmp/llvm-mingw.tar.xz \
++            "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/$LLVM_MINGW_NAME.tar.xz"
++          echo "$LLVM_MINGW_SHA256  /tmp/llvm-mingw.tar.xz" | sha256sum -c
++          mkdir -p "$HOME/opt" && tar -C "$HOME/opt" -xf /tmp/llvm-mingw.tar.xz
++          echo "LLVM_MINGW=$HOME/opt/$LLVM_MINGW_NAME" >> "$GITHUB_ENV"
++      - name: host unit tests
++        run: make -C installer/backend test
++      - name: build backend
++        run: |
++          make -C installer/backend win-x64 sdboot GK3W_VERSION='dev-${GITHUB_SHA::7}'
++          bash installer/backend/mke2fs/build.sh x64
++      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: backend-x64
++          if-no-files-found: error
++          path: |
++            installer/backend/build/x64/gk3w.exe
++            installer/backend/build/mke2fs-x64/mke2fs.exe
++            installer/backend/build/mke2fs-x64/mke2fs.conf
++            installer/backend/build/sdboot/systemd-bootaa64.efi
++
++  app:
++    name: app (x64)
++    needs: backend
++    runs-on: windows-latest
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
++        with:
++          name: backend-x64
++          path: installer/backend/build
++      - name: flutter
++        shell: pwsh
++        run: |
++          git clone --quiet --depth 1 --branch $env:FLUTTER_VERSION https://github.com/flutter/flutter.git C:\flutter
++          "C:\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
++      - name: fonts
++        shell: pwsh
++        run: python installer/common/tool/fetch-fonts.py
++      - name: build
++        shell: pwsh
++        working-directory: installer/windows
++        run: |
++          flutter --disable-analytics
++          flutter config --enable-windows-desktop
++          flutter pub get
++          flutter build windows --release --dart-define=GK3_VERSION=dev-$($env:GITHUB_SHA.Substring(0,7))
++      - name: check the bundle
++        shell: pwsh
++        run: |
++          $rel = "installer/windows/build/windows/x64/runner/Release"
++          foreach ($f in 'gk3_windows.exe', 'backend/gk3w.exe', 'backend/mke2fs.exe', 'backend/mke2fs.conf', 'backend/systemd-bootaa64.efi') {
++            if (-not (Test-Path "$rel/$f")) { throw "missing $rel/$f" }
++          }
++          foreach ($f in 'gk3_windows.exe', 'backend/gk3w.exe', 'backend/mke2fs.exe') {
++            $m = [System.IO.File]::ReadAllBytes((Resolve-Path "$rel/$f"))
++            $machine = [BitConverter]::ToUInt16($m, [BitConverter]::ToInt32($m, 0x3c) + 4)
++            if ($machine -ne 0x8664) { throw ("{0}: machine 0x{1:X4}, want 0x8664" -f $f, $machine) }
++          }
++      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
++        with:
++          name: ego-installer-windows-x64
++          if-no-files-found: error
++          path: installer/windows/build/windows/x64/runner/Release/
+diff --git a/installer-ego/README.md b/installer-ego/README.md
+new file mode 100644
+index 0000000..1d86009
+--- /dev/null
++++ b/installer-ego/README.md
+@@ -0,0 +1,85 @@
++# EGO 安装器（基于上游 vahiru/gaokun-android）
++
++本目录是「ColorOS 移植（EGO）」的安装器适配层。上游安装器本来就针对同一台机器（MateBook E Go / gaokun3），
++所以适配不是重写，而是**在 upstream 上压两条最小补丁**，其余全部复用——上游更新时只需要 rebase。
++
++- 上游仓库：<https://github.com/vahiru/gaokun-android>（GPL-3.0，含 Windows 安装器与 Live 安装器）
++- 本地 vendored 副本：`E:\gaokun-coloros\third_party\gaokun-android`（浅克隆，分支 `ego-coloros`）
++- 基线提交：`230fa9a Merge pull request #130 from vahiru/docs/installer`
++
++## 为什么只需要改两处
++
++上游安装器与我们的移植在「磁盘布局 + 启动方式」上本来就是同一套：
++
++| 项目 | 上游 | EGO 现状 |
++|---|---|---|
++| 分区 | esp 300M / misc 4M / metadata 32M / boot_a,b 64M / super / userdata | 完全相同（本机就是这么装的） |
++| ESP 结构 | `<machine-id>/android/slot_a|b/{Image,gaokun3.dtb,ramdisk.img>` | 本机 ESP 已有 `02a061f10c3fd2c0d21ea60430eeed67/android/slot_a/...`，同一结构 |
++| boot 载体 | systemd-boot + `loader/entries/<mid>-android-a.conf` | 相同（本机 entries 就是 `crDroid 16.0 — slot _a`，由该安装器写入） |
++| boot.img | v2 头，kernel + ramdisk + dtb | 本机 boot.img 已是 v2、含 170 KiB dtb、page 2048（已用工具校验通过） |
++| super | 12 GiB sparse | 唯一要改：EGO 用 20 GiB（双槽 9.3 GiB × 2 + 余量） |
++
++所以补丁只有：
++
++1. `patches/0001-…patch`：`installer/backend/src/plan.h` 的 `GK3W_SUPER_MIB` 12288 → 20480。
++2. `patches/0002-…patch`：`installer/backend/src/esp.c` 的启动项标题 `crDroid 16.0 (gaokun3)` → `ColorOS 17.0.1 (EGO)`。
++
++## 发布目录（安装器吃的产物）
++
++```
++release/
++├── boot.img                  # 必选，v2 + dtb + cmdline，≤64 MiB
++├── super.img.zst 或 super.img # 必选，sparse 格式；本项目默认未压缩的 super.img
++└── install-artifacts.sha256  # 可选，建议有：<sha256>  <文件名>
++```
++
++- `super.img` 必须是 **sparse**（`lpmake` 带 `-S`），展开后正好 20 GiB；安装器会先整份试解一遍再动盘。
++- `boot.img` 里必须有 dtb：安装器会把 kernel / dtb / ramdisk 拆出来分别写到 ESP 的 `slot_a`、`slot_b`。
++  （EGO 的 boot.img 目前是含 dtb 的，校验通过；如果哪天改成"dtb 只放 ESP"，安装器就会写 0 字节 dtb，开不了机。）
++- 自检工具：`tools/make_release.py`
++  ```
++  python tools/make_release.py --boot boot.img --check-only
++  python tools/make_release.py --boot boot.img --super super.img --out release
++  ```
++  它按上游安装器的规则逐项检查（v2 / page size / header_size 1660 / kernel 是 PE / dtb 是 FDT / cmdline 纯 ASCII /
++  super 是 sparse 且展开 20 GiB），最后生成 `install-artifacts.sha256`。
++
++## 构建（本机尚未具备工具链）
++
++上游的构建方式（照 `installer/tools/build/`）：
++
++- **Windows 安装器**：Flutter（Windows desktop）+ C 后端（MSVC，Win32 API）；产物 `gk3_windows.exe` + `gk3w.exe`。
++- **Live 安装器 / ISO**：Docker（`flutter-build.Dockerfile`、`live-build.Dockerfile`），`build-iso.sh` 出 ISO。
++- 本机检测结果：`cl` / `cmake` / `flutter` / `dart` / `zstd` / `sgdisk` 均未安装 → 目前只能出补丁与产物规范，还不能编译 GUI。
++- 需要装的东西：Visual Studio 2022（C++ 桌面 + Windows SDK）、Flutter SDK（stable）、Docker Desktop（Live/ISO）。
++
++## 上游更新怎么合并
++
++`third_party/gaokun-android` 是普通 git 仓库、`ego-coloros` 分支只多两个提交：
++
++```
++cd E:\gaokun-coloros\third_party\gaokun-android
++git remote add upstream https://github.com/vahiru/gaokun-android   # 首次
++git fetch --depth 1 upstream main
++git rebase upstream/main
++git format-patch main..ego-coloros -o ..\..\coloros-port\installer-ego\patches
++```
++
++- 冲突只会落在 `plan.h`（super 大小）与 `esp.c`（标题）；其余文件我们没动。
++- 每次同步后，用 `tools/make_release.py` 再跑一遍产物自检，确认上游没改发布目录约定。
++- 许可：上游 GPL-3.0，我们的分支与发布物必须继续 GPL-3.0，并公开这两条补丁（`patches/` 已满足）。
++
++## 还没做的适配（待办）
++
++1. **UI 文案**：Flutter 侧 `l10n` 里仍有 “crDroid”“gaokun-android” 字样（`installer/*/lib/l10n/app_*.arb`），发布前统一改成 ColorOS/EGO。
++2. **发布源**：上游默认从 GitHub/自建镜像下载 `boot.img`、`super.img.zst`；EGO 需要自己的 OTA 服务器地址与 `install-artifacts.sha256` 托管。
++3. **机型校验**：上游检查 `GK-W7X`，与本机一致，无需改；若要支持其它 SKU 再放宽。
++4. **Live ISO**：本机没有 Docker 与 Linux 构建环境，Live 安装器暂缓；先用 Windows 安装器 + 现有 adb 流程。
++5. **首次装机脚本化**：把「GPT（super 20 GiB）+ boot_a/b + super + ESP 入口」串成一条命令，作为安装器不可用时的兜底。
++6. **实例化验证**：在真机上用改过常量的安装器跑一次“重装 Android（保留数据/清数据各一次）”，确认 20 GiB super 的 GPT 建立、ESP 写入、开机与 A/B 入口都正常。
++
++## 与其它文档的关系
++
++- 分区与精简预算：`../docs/DEBLOAT-PLAN.md`（20 GiB super、单槽 9.28 GiB 的来源）
++- OTA 现状与引擎问题：`../reports/V43-OTA-STATUS-2026-11-23.md`
++- 上游安装说明：`third_party/gaokun-android/docs/INSTALL.md`
+diff --git a/installer-ego/patches/0001-EGO.patch b/installer-ego/patches/0001-EGO.patch
+new file mode 100644
+index 0000000..5643e12
+--- /dev/null
++++ b/installer-ego/patches/0001-EGO.patch
+@@ -0,0 +1,362 @@
++From 43b2df7431c29cd5a1903ac180ea5029cfa52497 Mon Sep 17 00:00:00 2001
++From: ego <ego@local>
++Date: Mon, 23 Nov 2026 21:05:56 +0800
++Subject: [PATCH 1/2] =?UTF-8?q?EGO:=20=E5=AE=89=E8=A3=85=E5=99=A8=E9=80=82?=
++ =?UTF-8?q?=E9=85=8D=E6=96=87=E6=A1=A3=E3=80=81=E8=A1=A5=E4=B8=81=E4=B8=8E?=
++ =?UTF-8?q?=E5=8F=91=E5=B8=83=E8=87=AA=E6=A3=80=E5=B7=A5=E5=85=B7?=
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++---
++ installer-ego/README.md                       |  85 +++++++++
++ .../0001-EGO-super-20-GiB-9.3-GiB-x-2.patch   |  31 ++++
++ .../0002-EGO-ESP-ColorOS-17.0.1-EGO.patch     |  37 ++++
++ installer-ego/tools/make_release.py           | 161 ++++++++++++++++++
++ 4 files changed, 314 insertions(+)
++ create mode 100644 installer-ego/README.md
++ create mode 100644 installer-ego/patches/0001-EGO-super-20-GiB-9.3-GiB-x-2.patch
++ create mode 100644 installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-EGO.patch
++ create mode 100644 installer-ego/tools/make_release.py
++
++diff --git a/installer-ego/README.md b/installer-ego/README.md
++new file mode 100644
++index 0000000..1d86009
++--- /dev/null
+++++ b/installer-ego/README.md
++@@ -0,0 +1,85 @@
+++# EGO 安装器（基于上游 vahiru/gaokun-android）
+++
+++本目录是「ColorOS 移植（EGO）」的安装器适配层。上游安装器本来就针对同一台机器（MateBook E Go / gaokun3），
+++所以适配不是重写，而是**在 upstream 上压两条最小补丁**，其余全部复用——上游更新时只需要 rebase。
+++
+++- 上游仓库：<https://github.com/vahiru/gaokun-android>（GPL-3.0，含 Windows 安装器与 Live 安装器）
+++- 本地 vendored 副本：`E:\gaokun-coloros\third_party\gaokun-android`（浅克隆，分支 `ego-coloros`）
+++- 基线提交：`230fa9a Merge pull request #130 from vahiru/docs/installer`
+++
+++## 为什么只需要改两处
+++
+++上游安装器与我们的移植在「磁盘布局 + 启动方式」上本来就是同一套：
+++
+++| 项目 | 上游 | EGO 现状 |
+++|---|---|---|
+++| 分区 | esp 300M / misc 4M / metadata 32M / boot_a,b 64M / super / userdata | 完全相同（本机就是这么装的） |
+++| ESP 结构 | `<machine-id>/android/slot_a|b/{Image,gaokun3.dtb,ramdisk.img>` | 本机 ESP 已有 `02a061f10c3fd2c0d21ea60430eeed67/android/slot_a/...`，同一结构 |
+++| boot 载体 | systemd-boot + `loader/entries/<mid>-android-a.conf` | 相同（本机 entries 就是 `crDroid 16.0 — slot _a`，由该安装器写入） |
+++| boot.img | v2 头，kernel + ramdisk + dtb | 本机 boot.img 已是 v2、含 170 KiB dtb、page 2048（已用工具校验通过） |
+++| super | 12 GiB sparse | 唯一要改：EGO 用 20 GiB（双槽 9.3 GiB × 2 + 余量） |
+++
+++所以补丁只有：
+++
+++1. `patches/0001-…patch`：`installer/backend/src/plan.h` 的 `GK3W_SUPER_MIB` 12288 → 20480。
+++2. `patches/0002-…patch`：`installer/backend/src/esp.c` 的启动项标题 `crDroid 16.0 (gaokun3)` → `ColorOS 17.0.1 (EGO)`。
+++
+++## 发布目录（安装器吃的产物）
+++
+++```
+++release/
+++├── boot.img                  # 必选，v2 + dtb + cmdline，≤64 MiB
+++├── super.img.zst 或 super.img # 必选，sparse 格式；本项目默认未压缩的 super.img
+++└── install-artifacts.sha256  # 可选，建议有：<sha256>  <文件名>
+++```
+++
+++- `super.img` 必须是 **sparse**（`lpmake` 带 `-S`），展开后正好 20 GiB；安装器会先整份试解一遍再动盘。
+++- `boot.img` 里必须有 dtb：安装器会把 kernel / dtb / ramdisk 拆出来分别写到 ESP 的 `slot_a`、`slot_b`。
+++  （EGO 的 boot.img 目前是含 dtb 的，校验通过；如果哪天改成"dtb 只放 ESP"，安装器就会写 0 字节 dtb，开不了机。）
+++- 自检工具：`tools/make_release.py`
+++  ```
+++  python tools/make_release.py --boot boot.img --check-only
+++  python tools/make_release.py --boot boot.img --super super.img --out release
+++  ```
+++  它按上游安装器的规则逐项检查（v2 / page size / header_size 1660 / kernel 是 PE / dtb 是 FDT / cmdline 纯 ASCII /
+++  super 是 sparse 且展开 20 GiB），最后生成 `install-artifacts.sha256`。
+++
+++## 构建（本机尚未具备工具链）
+++
+++上游的构建方式（照 `installer/tools/build/`）：
+++
+++- **Windows 安装器**：Flutter（Windows desktop）+ C 后端（MSVC，Win32 API）；产物 `gk3_windows.exe` + `gk3w.exe`。
+++- **Live 安装器 / ISO**：Docker（`flutter-build.Dockerfile`、`live-build.Dockerfile`），`build-iso.sh` 出 ISO。
+++- 本机检测结果：`cl` / `cmake` / `flutter` / `dart` / `zstd` / `sgdisk` 均未安装 → 目前只能出补丁与产物规范，还不能编译 GUI。
+++- 需要装的东西：Visual Studio 2022（C++ 桌面 + Windows SDK）、Flutter SDK（stable）、Docker Desktop（Live/ISO）。
+++
+++## 上游更新怎么合并
+++
+++`third_party/gaokun-android` 是普通 git 仓库、`ego-coloros` 分支只多两个提交：
+++
+++```
+++cd E:\gaokun-coloros\third_party\gaokun-android
+++git remote add upstream https://github.com/vahiru/gaokun-android   # 首次
+++git fetch --depth 1 upstream main
+++git rebase upstream/main
+++git format-patch main..ego-coloros -o ..\..\coloros-port\installer-ego\patches
+++```
+++
+++- 冲突只会落在 `plan.h`（super 大小）与 `esp.c`（标题）；其余文件我们没动。
+++- 每次同步后，用 `tools/make_release.py` 再跑一遍产物自检，确认上游没改发布目录约定。
+++- 许可：上游 GPL-3.0，我们的分支与发布物必须继续 GPL-3.0，并公开这两条补丁（`patches/` 已满足）。
+++
+++## 还没做的适配（待办）
+++
+++1. **UI 文案**：Flutter 侧 `l10n` 里仍有 “crDroid”“gaokun-android” 字样（`installer/*/lib/l10n/app_*.arb`），发布前统一改成 ColorOS/EGO。
+++2. **发布源**：上游默认从 GitHub/自建镜像下载 `boot.img`、`super.img.zst`；EGO 需要自己的 OTA 服务器地址与 `install-artifacts.sha256` 托管。
+++3. **机型校验**：上游检查 `GK-W7X`，与本机一致，无需改；若要支持其它 SKU 再放宽。
+++4. **Live ISO**：本机没有 Docker 与 Linux 构建环境，Live 安装器暂缓；先用 Windows 安装器 + 现有 adb 流程。
+++5. **首次装机脚本化**：把「GPT（super 20 GiB）+ boot_a/b + super + ESP 入口」串成一条命令，作为安装器不可用时的兜底。
+++6. **实例化验证**：在真机上用改过常量的安装器跑一次“重装 Android（保留数据/清数据各一次）”，确认 20 GiB super 的 GPT 建立、ESP 写入、开机与 A/B 入口都正常。
+++
+++## 与其它文档的关系
+++
+++- 分区与精简预算：`../docs/DEBLOAT-PLAN.md`（20 GiB super、单槽 9.28 GiB 的来源）
+++- OTA 现状与引擎问题：`../reports/V43-OTA-STATUS-2026-11-23.md`
+++- 上游安装说明：`third_party/gaokun-android/docs/INSTALL.md`
++diff --git a/installer-ego/patches/0001-EGO-super-20-GiB-9.3-GiB-x-2.patch b/installer-ego/patches/0001-EGO-super-20-GiB-9.3-GiB-x-2.patch
++new file mode 100644
++index 0000000..3c53a1c
++--- /dev/null
+++++ b/installer-ego/patches/0001-EGO-super-20-GiB-9.3-GiB-x-2.patch
++@@ -0,0 +1,31 @@
+++From 14b6d07090f939b326891679265a3cecc5bb3580 Mon Sep 17 00:00:00 2001
+++From: ego <ego@local>
+++Date: Mon, 23 Nov 2026 20:57:53 +0800
+++Subject: [PATCH 1/2] =?UTF-8?q?EGO:=20super=20=E5=88=86=E5=8C=BA=E6=94=B9?=
+++ =?UTF-8?q?=E4=B8=BA=2020=20GiB=EF=BC=88=E5=8F=8C=E6=A7=BD=209.3=20GiB=20x?=
+++ =?UTF-8?q?=202=20+=20=E4=BD=99=E9=87=8F=EF=BC=89?=
+++MIME-Version: 1.0
+++Content-Type: text/plain; charset=UTF-8
+++Content-Transfer-Encoding: 8bit
+++
+++---
+++ installer/backend/src/plan.h | 3 ++-
+++ 1 file changed, 2 insertions(+), 1 deletion(-)
+++
+++diff --git a/installer/backend/src/plan.h b/installer/backend/src/plan.h
+++index 8f587db..6e53045 100644
+++--- a/installer/backend/src/plan.h
++++++ b/installer/backend/src/plan.h
+++@@ -19,7 +19,8 @@
+++ #define GK3W_MISC_MIB 4u
+++ #define GK3W_METADATA_MIB 32u
+++ #define GK3W_BOOT_MIB 64u
+++-#define GK3W_SUPER_MIB 12288u
++++/* EGO（ColorOS 移植）用 20 GiB：单槽 9.3 GiB × 2 槽 + 余量；见 coloros-port/docs/DEBLOAT-PLAN.md */
++++#define GK3W_SUPER_MIB 20480u
+++ /* 旧版安装器在 super 与 userdata 之间建的救援分区 gk3rescue：现在不再建，卸载时仍要认出这样的旧安装（uninstall.c） */
+++ #define GK3W_RESCUE_MIB 1024u
+++ #define GK3W_USERDATA_MIN_MIB 8192u
+++-- 
+++2.54.0.windows.1
+++
++diff --git a/installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-EGO.patch b/installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-EGO.patch
++new file mode 100644
++index 0000000..0089140
++--- /dev/null
+++++ b/installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-EGO.patch
++@@ -0,0 +1,37 @@
+++From cc627217daed38bde3665efec355ab27324dc8fd Mon Sep 17 00:00:00 2001
+++From: ego <ego@local>
+++Date: Mon, 23 Nov 2026 20:57:54 +0800
+++Subject: [PATCH 2/2] =?UTF-8?q?EGO:=20ESP=20=E5=90=AF=E5=8A=A8=E9=A1=B9?=
+++ =?UTF-8?q?=E6=A0=87=E9=A2=98=E6=94=B9=E4=B8=BA=20ColorOS=2017.0.1=20(EGO)?=
+++MIME-Version: 1.0
+++Content-Type: text/plain; charset=UTF-8
+++Content-Transfer-Encoding: 8bit
+++
+++---
+++ installer/backend/src/esp.c | 4 ++--
+++ 1 file changed, 2 insertions(+), 2 deletions(-)
+++
+++diff --git a/installer/backend/src/esp.c b/installer/backend/src/esp.c
+++index 340f734..682ad74 100644
+++--- a/installer/backend/src/esp.c
++++++ b/installer/backend/src/esp.c
+++@@ -242,14 +242,14 @@ int gk3w_is_machine_id(const char *s)
+++ 
+++ /* 文件名与各行都是承重的：boot_control HAL 按 *-android-a.conf / *-android-b.conf 改写 loader.conf 的 default
+++  * （EspSlot.cpp:41-43）；OTA postinstall 只改 options 那一行、只往 slot_<后缀>/ 写这三个文件名。
+++- * ⚠️ 标题里的 "crDroid 16.0" 是写死的，换大版本时要改。 */
++++ * ⚠️ 标题里的产品名是写死的，EGO 分支改成了 ColorOS 17（ColorOS 移植），换大版本时要改。 */
+++ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline)
+++ {
+++     int n;
+++     if ((slot != 'a' && slot != 'b') || !gk3w_is_machine_id(mid))
+++         return -1;
+++     n = snprintf(out, cap,
+++-                 "title      crDroid 16.0 (gaokun3) \xe2\x80\x94 slot _%c\n"
++++                 "title      ColorOS 17.0.1 (EGO) \xe2\x80\x94 slot _%c\n"
+++                  "version    gaokun3-slot-%c\n"
+++                  "sort-key   zandroid%c\n"
+++                  "options    %s androidboot.slot_suffix=_%c\n"
+++-- 
+++2.54.0.windows.1
+++
++diff --git a/installer-ego/tools/make_release.py b/installer-ego/tools/make_release.py
++new file mode 100644
++index 0000000..6471917
++--- /dev/null
+++++ b/installer-ego/tools/make_release.py
++@@ -0,0 +1,161 @@
+++#!/usr/bin/env python3
+++"""EGO 安装包（installer release）打样与自检工具。
+++
+++用途：把「一个 boot.img + 一个 super 镜像」整理成上游安装器认识的发布目录，并在上机前
+++先把上游安装器会做的检查全部做一遍（省得到界面上才报错）。
+++
+++发布目录约定（与上游 installer/backend/src/linux/apply.c 一致）：
+++    boot.img                  必选，Android boot image v2，带 dtb，≤ 64 MiB
+++    super.img.zst 或 super.img  必选，sparse 格式；zst 可选（本项目默认用未压缩的 sparse）
+++    install-artifacts.sha256  可选但强烈建议，两行：<sha256>  <文件名>
+++
+++用法：
+++    python make_release.py --boot path/to/boot.img --super path/to/super.img --out out/release
+++    python make_release.py --boot path/to/boot.img --check-only          # 只体检 boot.img
+++"""
+++
+++import argparse
+++import hashlib
+++import struct
+++import sys
+++
+++SUPER_MIB = 20480            # 与 installer/backend/src/plan.h 的 GK3W_SUPER_MIB 一致
+++SPARSE_MAGIC = 0xED26FF3A
+++BOOT_MAGIC = b"ANDROID!"
+++FDT_MAGIC = b"\xd0\x0d\xfe\xed"
+++
+++
+++def le32(b, off):
+++    return struct.unpack_from("<I", b, off)[0]
+++
+++
+++def check_boot(data):
+++    errs = []
+++    if len(data) < 1660:
+++        return ["boot.img 太短"]
+++    if data[:8] != BOOT_MAGIC:
+++        return ["magic 不是 ANDROID!"]
+++    page = le32(data, 36)
+++    ver = le32(data, 40)
+++    hdr_size = le32(data, 1644)
+++    ksize = le32(data, 8)
+++    rsize = le32(data, 16)
+++    ssize = le32(data, 24)
+++    dsize = le32(data, 1648)
+++    if ver != 2:
+++        errs.append(f"header_version={ver}，安装器只认 v2")
+++    if page not in (2048, 4096, 8192, 16384):
+++        errs.append(f"page_size={page} 不合法")
+++    if hdr_size != 1660:
+++        errs.append(f"header_size={hdr_size}，v2 应为 1660")
+++    if not ksize:
+++        errs.append("kernel 段为空")
+++    if not rsize:
+++        errs.append("ramdisk 段为空")
+++    if not dsize:
+++        errs.append("dtb 段为空（安装器要把 dtb 单独写到 ESP，没有 dtb 会开不了机）")
+++    if len(data) > 64 << 20:
+++        errs.append("boot.img 超过 64 MiB，写不进 boot 分区")
+++
+++    off = page + (ksize + page - 1) // page * page + (rsize + page - 1) // page * page
+++    if off + 4 <= len(data):
+++        if data[:8] == BOOT_MAGIC and ksize and data[page:page + 2] != b"MZ":
+++            errs.append("kernel 不是 PE（MZ 魔数）")
+++        if dsize and data[off:off + 4] != FDT_MAGIC:
+++            errs.append("dtb 位置不是 FDT 魔数（镜像被改动过？）")
+++    cmdline = data[64:576].split(b"\x00")[0]
+++    if not cmdline:
+++        errs.append("cmdline 为空")
+++    elif any(c < 0x20 or c > 0x7e for c in cmdline):
+++        errs.append("cmdline 含非 ASCII 字符")
+++    info = {
+++        "page": page, "version": ver,
+++        "kernel_mib": round(ksize / 1048576, 1),
+++        "ramdisk_mib": round(rsize / 1048576, 1),
+++        "dtb_kib": round(dsize / 1024, 1),
+++        "file_mib": round(len(data) / 1048576, 1),
+++        "cmdline_head": cmdline[:60].decode("ascii", "replace"),
+++    }
+++    return errs, info
+++
+++
+++def check_super(path):
+++    errs = []
+++    with open(path, "rb") as f:
+++        head = f.read(28)
+++    if len(head) < 28:
+++        return ["super 镜像太短"], None
+++    magic = struct.unpack_from("<I", head, 0)[0]
+++    if magic != SPARSE_MAGIC:
+++        return ["不是 sparse 镜像（lpmake 要带 -S；安装器只认 sparse）"], None
+++    blk = struct.unpack_from("<I", head, 12)[0]
+++    total_blks = struct.unpack_from("<I", head, 16)[0]
+++    expanded = blk * total_blks
+++    want = SUPER_MIB << 20
+++    if expanded != want:
+++        errs.append(f"展开后 {expanded} 字节（{expanded/2**30:.1f} GiB），期望 {SUPER_MIB} MiB（{want/2**30:.1f} GiB）")
+++    return errs, {"block_size": blk, "expanded_gib": round(expanded / 2**30, 2)}
+++
+++
+++def sha256(path):
+++    h = hashlib.sha256()
+++    with open(path, "rb") as f:
+++        for chunk in iter(lambda: f.read(8 << 20), b""):
+++            h.update(chunk)
+++    return h.hexdigest()
+++
+++
+++def main():
+++    ap = argparse.ArgumentParser()
+++    ap.add_argument("--boot")
+++    ap.add_argument("--super")
+++    ap.add_argument("--out")
+++    ap.add_argument("--check-only", action="store_true")
+++    args = ap.parse_args()
+++    if not args.boot:
+++        ap.error("至少要给 --boot")
+++
+++    data = open(args.boot, "rb").read()
+++    res = check_boot(data)
+++    errs, info = res if isinstance(res, tuple) else (res, {})
+++    print("== boot.img")
+++    for k, v in info.items():
+++        print(f"   {k}: {v}")
+++    if errs:
+++        print("   ✗ " + "；".join(errs))
+++        sys.exit(1)
+++    print("   ✓ 通过（v2 + kernel/ramdisk/dtb + cmdline 均在）")
+++
+++    if args.check_only:
+++        return
+++
+++    if not args.super:
+++        ap.error("打包发布目录需要 --super")
+++    serrs, sinfo = check_super(args.super)
+++    print("== super 镜像")
+++    for k, v in (sinfo or {}).items():
+++        print(f"   {k}: {v}")
+++    if serrs:
+++        print("   ✗ " + "；".join(serrs))
+++        sys.exit(1)
+++    print("   ✓ 通过（sparse，展开尺寸与 GK3W_SUPER_MIB 一致）")
+++
+++    if not args.out:
+++        ap.error("打包发布目录需要 --out")
+++    import os
+++    os.makedirs(args.out, exist_ok=True)
+++    boot_dst = os.path.join(args.out, "boot.img")
+++    super_name = os.path.basename(args.super)
+++    with open(boot_dst, "wb") as f:
+++        f.write(data)
+++    manifest = []
+++    manifest.append(f"{sha256(boot_dst)}  boot.img")
+++    manifest.append(f"{sha256(args.super)}  {super_name}")
+++    with open(os.path.join(args.out, "install-artifacts.sha256"), "w", newline="\n") as f:
+++        f.write("\n".join(manifest) + "\n")
+++    print(f"== 已写入 {args.out}")
+++    print("   boot.img、super（原样复制/软链请自行处理）、install-artifacts.sha256")
+++
+++
+++if __name__ == "__main__":
+++    main()
++-- 
++2.54.0.windows.1
++
+diff --git a/installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-alpha-v1-check_install.py.patch b/installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-alpha-v1-check_install.py.patch
+new file mode 100644
+index 0000000..1d18b7b
+--- /dev/null
++++ b/installer-ego/patches/0002-EGO-ESP-ColorOS-17.0.1-alpha-v1-check_install.py.patch
+@@ -0,0 +1,184 @@
++From bf44935128008d8cc840dc0fa16f1636ca2b8dd0 Mon Sep 17 00:00:00 2001
++From: ego <ego@local>
++Date: Mon, 23 Nov 2026 21:06:25 +0800
++Subject: [PATCH 2/2] =?UTF-8?q?EGO:=20ESP=20=E5=90=AF=E5=8A=A8=E9=A1=B9?=
++ =?UTF-8?q?=E6=A0=87=E9=A2=98=E6=94=B9=E4=B8=BA=20ColorOS=2017.0.1=20(alph?=
++ =?UTF-8?q?a-v1)=EF=BC=88=E5=90=8C=E6=AD=A5=E5=8D=95=E6=B5=8B=E4=B8=8E=20c?=
++ =?UTF-8?q?heck=5Finstall.py=EF=BC=89?=
++MIME-Version: 1.0
++Content-Type: text/plain; charset=UTF-8
++Content-Transfer-Encoding: 8bit
++
++---
++ .github/workflows/ego-installer-x64.yml       | 91 +++++++++++++++++++
++ installer/backend/src/esp.c                   |  4 +-
++ installer/backend/src/esp.h                   |  6 ++
++ installer/backend/test/linux/check_install.py |  2 +-
++ installer/backend/test/test_stage2.c          |  2 +-
++ 5 files changed, 101 insertions(+), 4 deletions(-)
++ create mode 100644 .github/workflows/ego-installer-x64.yml
++
++diff --git a/.github/workflows/ego-installer-x64.yml b/.github/workflows/ego-installer-x64.yml
++new file mode 100644
++index 0000000..ecd9ad2
++--- /dev/null
+++++ b/.github/workflows/ego-installer-x64.yml
++@@ -0,0 +1,91 @@
+++# 说明：上游的 installer-windows.yml 用 windows-11-arm 运行器（私有仓库拿不到 ARM 运行器），
+++# 这里给私有仓库准备一条 x64 备用流水线：产物是 x64 的 Windows 安装器，在平板的 Windows 侧
+++# 由 Windows-on-ARM 的 x64 模拟运行（功能相同，启动稍慢）。
+++# 发布时若要用原生 ARM64 版，把仓库转公开或给组织开 ARM 运行器，直接用上游的 installer-windows.yml。
+++
+++name: EGO installer (x64)
+++
+++on:
+++  workflow_dispatch:
+++
+++permissions:
+++  contents: read
+++
+++env:
+++  FLUTTER_VERSION: '3.47.2'
+++  PYTHONUTF8: '1'
+++  LLVM_MINGW_NAME: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
+++  LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
+++
+++jobs:
+++  backend:
+++    name: gk3w + mke2fs + systemd-boot (x64)
+++    runs-on: ubuntu-24.04
+++    steps:
+++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+++      - name: llvm-mingw
+++        run: |
+++          curl -fsSL --retry 3 -o /tmp/llvm-mingw.tar.xz \
+++            "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/$LLVM_MINGW_NAME.tar.xz"
+++          echo "$LLVM_MINGW_SHA256  /tmp/llvm-mingw.tar.xz" | sha256sum -c
+++          mkdir -p "$HOME/opt" && tar -C "$HOME/opt" -xf /tmp/llvm-mingw.tar.xz
+++          echo "LLVM_MINGW=$HOME/opt/$LLVM_MINGW_NAME" >> "$GITHUB_ENV"
+++      - name: host unit tests
+++        run: make -C installer/backend test
+++      - name: build backend
+++        run: |
+++          make -C installer/backend win-x64 sdboot GK3W_VERSION='dev-${GITHUB_SHA::7}'
+++          bash installer/backend/mke2fs/build.sh x64
+++      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+++        with:
+++          name: backend-x64
+++          if-no-files-found: error
+++          path: |
+++            installer/backend/build/x64/gk3w.exe
+++            installer/backend/build/mke2fs-x64/mke2fs.exe
+++            installer/backend/build/mke2fs-x64/mke2fs.conf
+++            installer/backend/build/sdboot/systemd-bootaa64.efi
+++
+++  app:
+++    name: app (x64)
+++    needs: backend
+++    runs-on: windows-latest
+++    steps:
+++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+++      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+++        with:
+++          name: backend-x64
+++          path: installer/backend/build
+++      - name: flutter
+++        shell: pwsh
+++        run: |
+++          git clone --quiet --depth 1 --branch $env:FLUTTER_VERSION https://github.com/flutter/flutter.git C:\flutter
+++          "C:\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+++      - name: fonts
+++        shell: pwsh
+++        run: python installer/common/tool/fetch-fonts.py
+++      - name: build
+++        shell: pwsh
+++        working-directory: installer/windows
+++        run: |
+++          flutter --disable-analytics
+++          flutter config --enable-windows-desktop
+++          flutter pub get
+++          flutter build windows --release --dart-define=GK3_VERSION=dev-$($env:GITHUB_SHA.Substring(0,7))
+++      - name: check the bundle
+++        shell: pwsh
+++        run: |
+++          $rel = "installer/windows/build/windows/x64/runner/Release"
+++          foreach ($f in 'gk3_windows.exe', 'backend/gk3w.exe', 'backend/mke2fs.exe', 'backend/mke2fs.conf', 'backend/systemd-bootaa64.efi') {
+++            if (-not (Test-Path "$rel/$f")) { throw "missing $rel/$f" }
+++          }
+++          foreach ($f in 'gk3_windows.exe', 'backend/gk3w.exe', 'backend/mke2fs.exe') {
+++            $m = [System.IO.File]::ReadAllBytes((Resolve-Path "$rel/$f"))
+++            $machine = [BitConverter]::ToUInt16($m, [BitConverter]::ToInt32($m, 0x3c) + 4)
+++            if ($machine -ne 0x8664) { throw ("{0}: machine 0x{1:X4}, want 0x8664" -f $f, $machine) }
+++          }
+++      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+++        with:
+++          name: ego-installer-windows-x64
+++          if-no-files-found: error
+++          path: installer/windows/build/windows/x64/runner/Release/
++diff --git a/installer/backend/src/esp.c b/installer/backend/src/esp.c
++index 682ad74..8c1a239 100644
++--- a/installer/backend/src/esp.c
+++++ b/installer/backend/src/esp.c
++@@ -242,14 +242,14 @@ int gk3w_is_machine_id(const char *s)
++ 
++ /* 文件名与各行都是承重的：boot_control HAL 按 *-android-a.conf / *-android-b.conf 改写 loader.conf 的 default
++  * （EspSlot.cpp:41-43）；OTA postinstall 只改 options 那一行、只往 slot_<后缀>/ 写这三个文件名。
++- * ⚠️ 标题里的产品名是写死的，EGO 分支改成了 ColorOS 17（ColorOS 移植），换大版本时要改。 */
+++ * ⚠️ 标题里的产品名是写死的（GK3W_EGO_TITLE，见 esp.h），换大版本时要改。 */
++ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline)
++ {
++     int n;
++     if ((slot != 'a' && slot != 'b') || !gk3w_is_machine_id(mid))
++         return -1;
++     n = snprintf(out, cap,
++-                 "title      ColorOS 17.0.1 (EGO) \xe2\x80\x94 slot _%c\n"
+++                 "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _%c\n"
++                  "version    gaokun3-slot-%c\n"
++                  "sort-key   zandroid%c\n"
++                  "options    %s androidboot.slot_suffix=_%c\n"
++diff --git a/installer/backend/src/esp.h b/installer/backend/src/esp.h
++index 7934039..aa8d3a9 100644
++--- a/installer/backend/src/esp.h
+++++ b/installer/backend/src/esp.h
++@@ -71,6 +71,12 @@ gk3w_backup_action gk3w_install_backup_decide(const uint8_t *cur, size_t cur_len
++ /* 这个 EFI 程序是不是 systemd-boot：带 "#### LoaderInfo: systemd-boot "（systemd-boot 自己留的版本标记） */
++ int gk3w_is_systemd_boot(const uint8_t *b, size_t n);
++ 
+++/* EGO：启动项标题里的产品名与版本。未正式发版前用 alpha-vXX，随版本手动递增。
+++ * 测试与 check_install.py 引用同一个字符串。 */
+++#ifndef GK3W_EGO_TITLE
+++#define GK3W_EGO_TITLE "ColorOS 17.0.1 (alpha-v1)"
+++#endif
+++
++ /* loader/entries/<mid>-android-<slot>.conf 的全文。返回写入的长度，out 不够返回 -1。 */
++ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline);
++ 
++diff --git a/installer/backend/test/linux/check_install.py b/installer/backend/test/linux/check_install.py
++index 5530455..a3ff33a 100644
++--- a/installer/backend/test/linux/check_install.py
+++++ b/installer/backend/test/linux/check_install.py
++@@ -202,7 +202,7 @@ def main():
++     for s in 'ab':
++         for f in ('Image', 'gaokun3.dtb', 'ramdisk.img'):
++             same('%s/android/slot_%s/%s' % (a.mid, s, f), exp(f), 'boot.img 里的 %s' % f)
++-        entry = ('title      crDroid 16.0 (gaokun3) \u2014 slot _{s}\nversion    gaokun3-slot-{s}\nsort-key   zandroid{s}\n'
+++        entry = ('title      ColorOS 17.0.1 (alpha-v1) \u2014 slot _{s}\nversion    gaokun3-slot-{s}\nsort-key   zandroid{s}\n'
++                  'options    {c} androidboot.slot_suffix=_{s}\nlinux      /{m}/android/slot_{s}/Image\n'
++                  'devicetree /{m}/android/slot_{s}/gaokun3.dtb\ninitrd     /{m}/android/slot_{s}/ramdisk.img\n'
++                  ).format(s=s, c=cmdline, m=a.mid)
++diff --git a/installer/backend/test/test_stage2.c b/installer/backend/test/test_stage2.c
++index 86469d3..c6b3edd 100644
++--- a/installer/backend/test/test_stage2.c
+++++ b/installer/backend/test/test_stage2.c
++@@ -322,7 +322,7 @@ static void test_esp(void)
++     char out[1024];
++     const char *mid = "0123456789abcdef0123456789abcdef";
++     const char *want =
++-        "title      crDroid 16.0 (gaokun3) \xe2\x80\x94 slot _b\n"
+++        "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _b\n"
++         "version    gaokun3-slot-b\n"
++         "sort-key   zandroidb\n"
++         "options    console=tty0 quiet androidboot.slot_suffix=_b\n"
++-- 
++2.54.0.windows.1
++
+diff --git a/installer-ego/tools/make_release.py b/installer-ego/tools/make_release.py
+new file mode 100644
+index 0000000..6471917
+--- /dev/null
++++ b/installer-ego/tools/make_release.py
+@@ -0,0 +1,161 @@
++#!/usr/bin/env python3
++"""EGO 安装包（installer release）打样与自检工具。
++
++用途：把「一个 boot.img + 一个 super 镜像」整理成上游安装器认识的发布目录，并在上机前
++先把上游安装器会做的检查全部做一遍（省得到界面上才报错）。
++
++发布目录约定（与上游 installer/backend/src/linux/apply.c 一致）：
++    boot.img                  必选，Android boot image v2，带 dtb，≤ 64 MiB
++    super.img.zst 或 super.img  必选，sparse 格式；zst 可选（本项目默认用未压缩的 sparse）
++    install-artifacts.sha256  可选但强烈建议，两行：<sha256>  <文件名>
++
++用法：
++    python make_release.py --boot path/to/boot.img --super path/to/super.img --out out/release
++    python make_release.py --boot path/to/boot.img --check-only          # 只体检 boot.img
++"""
++
++import argparse
++import hashlib
++import struct
++import sys
++
++SUPER_MIB = 20480            # 与 installer/backend/src/plan.h 的 GK3W_SUPER_MIB 一致
++SPARSE_MAGIC = 0xED26FF3A
++BOOT_MAGIC = b"ANDROID!"
++FDT_MAGIC = b"\xd0\x0d\xfe\xed"
++
++
++def le32(b, off):
++    return struct.unpack_from("<I", b, off)[0]
++
++
++def check_boot(data):
++    errs = []
++    if len(data) < 1660:
++        return ["boot.img 太短"]
++    if data[:8] != BOOT_MAGIC:
++        return ["magic 不是 ANDROID!"]
++    page = le32(data, 36)
++    ver = le32(data, 40)
++    hdr_size = le32(data, 1644)
++    ksize = le32(data, 8)
++    rsize = le32(data, 16)
++    ssize = le32(data, 24)
++    dsize = le32(data, 1648)
++    if ver != 2:
++        errs.append(f"header_version={ver}，安装器只认 v2")
++    if page not in (2048, 4096, 8192, 16384):
++        errs.append(f"page_size={page} 不合法")
++    if hdr_size != 1660:
++        errs.append(f"header_size={hdr_size}，v2 应为 1660")
++    if not ksize:
++        errs.append("kernel 段为空")
++    if not rsize:
++        errs.append("ramdisk 段为空")
++    if not dsize:
++        errs.append("dtb 段为空（安装器要把 dtb 单独写到 ESP，没有 dtb 会开不了机）")
++    if len(data) > 64 << 20:
++        errs.append("boot.img 超过 64 MiB，写不进 boot 分区")
++
++    off = page + (ksize + page - 1) // page * page + (rsize + page - 1) // page * page
++    if off + 4 <= len(data):
++        if data[:8] == BOOT_MAGIC and ksize and data[page:page + 2] != b"MZ":
++            errs.append("kernel 不是 PE（MZ 魔数）")
++        if dsize and data[off:off + 4] != FDT_MAGIC:
++            errs.append("dtb 位置不是 FDT 魔数（镜像被改动过？）")
++    cmdline = data[64:576].split(b"\x00")[0]
++    if not cmdline:
++        errs.append("cmdline 为空")
++    elif any(c < 0x20 or c > 0x7e for c in cmdline):
++        errs.append("cmdline 含非 ASCII 字符")
++    info = {
++        "page": page, "version": ver,
++        "kernel_mib": round(ksize / 1048576, 1),
++        "ramdisk_mib": round(rsize / 1048576, 1),
++        "dtb_kib": round(dsize / 1024, 1),
++        "file_mib": round(len(data) / 1048576, 1),
++        "cmdline_head": cmdline[:60].decode("ascii", "replace"),
++    }
++    return errs, info
++
++
++def check_super(path):
++    errs = []
++    with open(path, "rb") as f:
++        head = f.read(28)
++    if len(head) < 28:
++        return ["super 镜像太短"], None
++    magic = struct.unpack_from("<I", head, 0)[0]
++    if magic != SPARSE_MAGIC:
++        return ["不是 sparse 镜像（lpmake 要带 -S；安装器只认 sparse）"], None
++    blk = struct.unpack_from("<I", head, 12)[0]
++    total_blks = struct.unpack_from("<I", head, 16)[0]
++    expanded = blk * total_blks
++    want = SUPER_MIB << 20
++    if expanded != want:
++        errs.append(f"展开后 {expanded} 字节（{expanded/2**30:.1f} GiB），期望 {SUPER_MIB} MiB（{want/2**30:.1f} GiB）")
++    return errs, {"block_size": blk, "expanded_gib": round(expanded / 2**30, 2)}
++
++
++def sha256(path):
++    h = hashlib.sha256()
++    with open(path, "rb") as f:
++        for chunk in iter(lambda: f.read(8 << 20), b""):
++            h.update(chunk)
++    return h.hexdigest()
++
++
++def main():
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--boot")
++    ap.add_argument("--super")
++    ap.add_argument("--out")
++    ap.add_argument("--check-only", action="store_true")
++    args = ap.parse_args()
++    if not args.boot:
++        ap.error("至少要给 --boot")
++
++    data = open(args.boot, "rb").read()
++    res = check_boot(data)
++    errs, info = res if isinstance(res, tuple) else (res, {})
++    print("== boot.img")
++    for k, v in info.items():
++        print(f"   {k}: {v}")
++    if errs:
++        print("   ✗ " + "；".join(errs))
++        sys.exit(1)
++    print("   ✓ 通过（v2 + kernel/ramdisk/dtb + cmdline 均在）")
++
++    if args.check_only:
++        return
++
++    if not args.super:
++        ap.error("打包发布目录需要 --super")
++    serrs, sinfo = check_super(args.super)
++    print("== super 镜像")
++    for k, v in (sinfo or {}).items():
++        print(f"   {k}: {v}")
++    if serrs:
++        print("   ✗ " + "；".join(serrs))
++        sys.exit(1)
++    print("   ✓ 通过（sparse，展开尺寸与 GK3W_SUPER_MIB 一致）")
++
++    if not args.out:
++        ap.error("打包发布目录需要 --out")
++    import os
++    os.makedirs(args.out, exist_ok=True)
++    boot_dst = os.path.join(args.out, "boot.img")
++    super_name = os.path.basename(args.super)
++    with open(boot_dst, "wb") as f:
++        f.write(data)
++    manifest = []
++    manifest.append(f"{sha256(boot_dst)}  boot.img")
++    manifest.append(f"{sha256(args.super)}  {super_name}")
++    with open(os.path.join(args.out, "install-artifacts.sha256"), "w", newline="\n") as f:
++        f.write("\n".join(manifest) + "\n")
++    print(f"== 已写入 {args.out}")
++    print("   boot.img、super（原样复制/软链请自行处理）、install-artifacts.sha256")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/installer/backend/src/plan.h b/installer/backend/src/plan.h
+index 8f587db..6e53045 100644
+--- a/installer/backend/src/plan.h
++++ b/installer/backend/src/plan.h
+@@ -19,7 +19,8 @@
+ #define GK3W_MISC_MIB 4u
+ #define GK3W_METADATA_MIB 32u
+ #define GK3W_BOOT_MIB 64u
+-#define GK3W_SUPER_MIB 12288u
++/* EGO（ColorOS 移植）用 20 GiB：单槽 9.3 GiB × 2 槽 + 余量；见 coloros-port/docs/DEBLOAT-PLAN.md */
++#define GK3W_SUPER_MIB 20480u
+ /* 旧版安装器在 super 与 userdata 之间建的救援分区 gk3rescue：现在不再建，卸载时仍要认出这样的旧安装（uninstall.c） */
+ #define GK3W_RESCUE_MIB 1024u
+ #define GK3W_USERDATA_MIN_MIB 8192u
+diff --git a/installer/backend/test/test_stage2.c b/installer/backend/test/test_stage2.c
+index 86469d3..3360adc 100644
+--- a/installer/backend/test/test_stage2.c
++++ b/installer/backend/test/test_stage2.c
+@@ -258,7 +258,7 @@ static void test_plan_fixture(void)
+     } want[] = {
+         {"misc", 789448704, 789456895, 4},          {"metadata", 789456896, 789522431, 32},
+         {"boot_a", 789522432, 789653503, 64},       {"boot_b", 789653504, 789784575, 64},
+-        {"super", 789784576, 814950399, 12288},     {"userdata", 814950400, 957220863, 69468},
++        {"super", 789784576, 831727615, 20480},      {"userdata", 831727616, 957220863, 61276},
+     };
+     gk3w_plan_req r = {512, {789448704, 957220863}, 0, 0, {0, 0}, NULL};
+     gk3w_plan p;
+@@ -268,24 +268,27 @@ static void test_plan_fixture(void)
+         CHECK(!strcmp(p.parts[i].name, want[i].name));
+         CHECK(p.parts[i].first == want[i].first && p.parts[i].last == want[i].last && p.parts[i].mib == want[i].mib);
+     }
+-    CHECK(p.avail_mib == 81920 && p.fixed_mib == 12452 && p.userdata_mib == 69468);
++    CHECK(p.avail_mib == 81920 && p.fixed_mib == 20644 && p.userdata_mib == 61276);
+ }
+ 
+ static void test_plan_edges(void)
+ {
+     gk3w_plan p;
+-    gk3w_plan_req r = {512, {1000, 1000 + (20644ull << 11)}, 0, 0, {0, 0}, NULL};
+-    /* 起点 1000 向上对齐到 2048，丢掉的不到 1 MiB 让可用只剩 20643 MiB，差 1 MiB */
+-    CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_ENOSPACE && p.avail_mib == 20643);
++    /* 固定分区 = misc + metadata + boot_a + boot_b + super（EGO 是 20 GiB），userdata 下限 8 GiB */
++    uint64_t fixed = GK3W_MISC_MIB + GK3W_METADATA_MIB + 2 * GK3W_BOOT_MIB + GK3W_SUPER_MIB;
++    uint64_t need = fixed + GK3W_USERDATA_MIN_MIB;
++    gk3w_plan_req r = {512, {1000, 1000 + (need << 11)}, 0, 0, {0, 0}, NULL};
++    /* 起点 1000 向上对齐到 2048，丢掉的不到 1 MiB 让可用只剩 need-1 MiB，差 1 MiB */
++    CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_ENOSPACE && p.avail_mib == need - 1);
+     r.region.last += 2048;
+     CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_OK);
+-    CHECK(p.parts[0].first == 2048 && p.avail_mib == 20644);
++    CHECK(p.parts[0].first == 2048 && p.avail_mib == need);
+     /* 差 1 MiB 不够 */
+-    r.region.last = 2048 + (20644ull << 11) - 2;
+-    CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_ENOSPACE && p.need_mib == 20644 && p.avail_mib == 20643);
++    r.region.last = 2048 + (need << 11) - 2;
++    CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_ENOSPACE && p.need_mib == need && p.avail_mib == need - 1);
+     /* 正好够 */
+-    r.region.last = 2048 + (20644ull << 11) - 1;
+-    CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_OK && p.userdata_mib == 8192);
++    r.region.last = 2048 + (need << 11) - 1;
++    CHECK(gk3w_plan_alongside(&r, &p) == GK3W_PLAN_OK && p.userdata_mib == GK3W_USERDATA_MIN_MIB);
+     CHECK(p.parts[p.n - 1].last == r.region.last);
+     /* 指定 userdata */
+     r.region.last = 2048 + (40000ull << 11) - 1;
+@@ -298,10 +301,10 @@ static void test_plan_edges(void)
+     r.userdata_mib = 0;
+     /* 4Kn：1 MiB = 256 扇区 */
+     {
+-        gk3w_plan_req q = {4096, {6, 6 + (20645ull << 8)}, 0, 0, {0, 0}, NULL};
++        gk3w_plan_req q = {4096, {6, 6 + ((need + 1) << 8)}, 0, 0, {0, 0}, NULL};
+         CHECK(gk3w_plan_alongside(&q, &p) == GK3W_PLAN_OK);
+         CHECK(p.parts[0].first == 256 && p.parts[0].last == 256 + 4 * 256 - 1);
+-        CHECK(p.parts[4].mib == 12288 && p.parts[4].last - p.parts[4].first + 1 == 12288ull * 256);
++        CHECK(p.parts[4].mib == GK3W_SUPER_MIB && p.parts[4].last - p.parts[4].first + 1 == (uint64_t)GK3W_SUPER_MIB * 256);
+     }
+     /* 参数不对、区间顶到 UINT64_MAX 不溢出 */
+     r.sector = 1000;
+@@ -371,7 +374,7 @@ static void test_plan_whole_reinstall(void)
+     CHECK(!strcmp(p.parts[1].name, "misc") && p.parts[1].first == 2048 + 300 * 2048);
+     CHECK(!strcmp(p.parts[6].name, "userdata") && p.parts[6].last <= total - 34);
+     /* 盘按整 MiB 算，首尾各让出 1 MiB */
+-    CHECK(p.avail_mib == (64u << 10) - 2 && p.fixed_mib == 300 + 4 + 32 + 128 + 12288);
++    CHECK(p.avail_mib == (64u << 10) - 2 && p.fixed_mib == 300 + GK3W_MISC_MIB + GK3W_METADATA_MIB + 2 * GK3W_BOOT_MIB + GK3W_SUPER_MIB);
+     CHECK(p.userdata_mib == p.avail_mib - p.fixed_mib);
+ 
+     /* 整盘清空、保留安装器分区：Android 排在它前面那段，userdata 紧挨着它；前面放不下才排到后面 */
+@@ -403,7 +406,7 @@ static void test_plan_whole_reinstall(void)
+     memset(parts, 0, sizeof parts);
+     {
+         static const char *const nm[] = {"esp", "misc", "boot_a", "boot_b", "metadata", "super", "userdata", "x"};
+-        static const uint64_t sz[] = {300 * 2048, 2014, 64 * 2048, 64 * 2048, 32 * 2048, 12288 * 2048, 9000 * 2048, 2048};
++        static const uint64_t sz[] = {300 * 2048, 2014, 64 * 2048, 64 * 2048, 32 * 2048, (uint64_t)GK3W_SUPER_MIB * 2048, 9000 * 2048, 2048};
+         uint64_t cur = 34;
+         for (int i = 0; i < 8; i++) {
+             snprintf(parts[i].name, sizeof parts[i].name, "%s", nm[i]);
+@@ -416,12 +419,12 @@ static void test_plan_whole_reinstall(void)
+     CHECK(gk3w_plan_reinstall(512, parts, 8, 0, &ri) == GK3W_PLAN_OK);
+     CHECK(ri.p[0].idx == 2 && ri.kib[0] == 1007 && ri.act[0] == GK3W_REUSE_WRITE);
+     CHECK(ri.act[1] == GK3W_REUSE_FORMAT && ri.act[5] == GK3W_REUSE_FORMAT && ri.userdata_mib == 9000);
+-    CHECK(ri.fixed_mib == 0 + 32 + 64 + 64 + 12288);
++    CHECK(ri.fixed_mib == 0 + GK3W_METADATA_MIB + 2 * GK3W_BOOT_MIB + GK3W_SUPER_MIB);
+     CHECK(gk3w_plan_reinstall(512, parts, 8, 1, &ri) == GK3W_PLAN_OK && ri.act[1] == GK3W_REUSE_KEEP && ri.act[5] == GK3W_REUSE_KEEP);
+     /* 太小、缺、重名 */
+-    parts[5].last = parts[5].first + 12287 * 2048 - 1;
+-    CHECK(gk3w_plan_reinstall(512, parts, 8, 0, &ri) == GK3W_PLAN_SMALL && !strcmp(ri.bad, "super") && ri.need_kib == 12288 * 1024);
+-    parts[5].last = parts[5].first + 12288 * 2048 - 1;
++    parts[5].last = parts[5].first + ((uint64_t)GK3W_SUPER_MIB - 1) * 2048 - 1;
++    CHECK(gk3w_plan_reinstall(512, parts, 8, 0, &ri) == GK3W_PLAN_SMALL && !strcmp(ri.bad, "super") && ri.need_kib == (uint64_t)GK3W_SUPER_MIB * 1024);
++    parts[5].last = parts[5].first + (uint64_t)GK3W_SUPER_MIB * 2048 - 1;
+     snprintf(parts[7].name, sizeof parts[7].name, "boot_a");
+     CHECK(gk3w_plan_reinstall(512, parts, 8, 0, &ri) == GK3W_PLAN_DUP && !strcmp(ri.bad, "boot_a"));
+     snprintf(parts[7].name, sizeof parts[7].name, "x");

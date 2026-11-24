@@ -1,0 +1,109 @@
+// gaokun3 相机 HAL（AIDL）—— 基于 libcamera 的软件 ISP。
+// 背景与三条路的取舍见本目录 README.md 与 docs/dev/camera.md。
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+// ⚠️★★ libcamera 现在在 AOSP 里编（external/libcamera/Android.bp）。
+// 一开始的规划是"用 NDK 预编译 + Soong 只编 HAL"，那是【错的】：
+// NDK 的 libc++ 用内联命名空间 std::__ndk1，AOSP 平台用 std::__1，
+// 凡签名带标准库类型的符号两边就对不上 —— 实测链接报
+// "undefined symbol: ...generateConfigurationENSt3__14span..."。见 #96。
+
+cc_binary {
+    name: "android.hardware.camera.provider-service.gaokun3",
+    relative_install_path: "hw",
+    vendor: true,
+    init_rc: ["gaokun3-camera.rc"],
+    vintf_fragments: ["gaokun3-camera.xml"],
+
+    srcs: [
+        "service.cpp",
+        "Provider.cpp",
+        "Device.cpp",
+        "Session.cpp",
+        "Metadata.cpp",
+        "Lens.cpp",          // VCM 直驱（libcamera 不实现 LensPosition，见 Lens.h）
+        "AutoFocus.cpp",     // 对比度检测 AF
+        "PhaseDetect.cpp",   // 后摄 PD 像素的相位检测（全尺寸模式）
+        "Exif.cpp",          // JPEG 的 EXIF（APP1）与缩略图
+        "Sharpen.cpp",       // 亮度锐化（EDGE_MODE）
+    ],
+
+    // libcamera 的公开头 + 我们为 Soong 写的 config.h/生成头。
+    include_dirs: [
+        "external/libcamera/include",
+        "external/libcamera/generated/include",
+    ],
+
+    shared_libs: [
+        "libbinder_ndk",
+        "liblog",
+        "libutils",
+        "libcutils",
+        "libui",                 // GraphicBufferMapper
+        "libcamera_metadata",
+        "libfmq",                // ICameraDeviceSession 的两个 FMQ 元数据队列
+        "libyuv",                // RGB→YUV（软件 ISP 只出 RGB，见 README）
+        "libjpeg",               // 静态拍照（BLOB 流）
+        "libcamera_gk3",
+        "libcamera_base_gk3",
+        // ⚠️ 只列我们直接实现的三个接口。graphics.common / hardware.common /
+        //    camera.metadata 【不要写死版本】：它们由上面这些传递带进来，
+        //    自己再声明一份会撞 "depends on multiple versions of the same
+        //    aidl_interface"（实测我写 graphics.common-V5、而 camera 拉的是 V7）。
+        //    版本上限实测：provider/device = 3，camera.common = 1，metadata = 4。
+        "android.hardware.camera.provider-V3-ndk",
+        "android.hardware.camera.device-V3-ndk",
+        "android.hardware.camera.common-V1-ndk",
+    ],
+
+    // ⚠️ libaidlcommonsupport 只有静态变体（Soong 报 "missing variant"，
+    //    可用变体全是 link:static）——它提供 makeFromAidl()。
+    static_libs: [
+        "libaidlcommonsupport",
+    ],
+
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-Wno-unused-parameter",
+        // libcamera 的公开头要求 C++20（上游 meson.build:9 cpp_std=c++20）
+        "-std=c++20",
+    ],
+}
+
+// 后摄 VCM 的独立探针（对焦标定用）。不进 PRODUCT_PACKAGES：
+// 只有显式 `m gaokun3-lens-probe` 才编，产物在 out 里直接 pull 走即可。
+cc_binary {
+    name: "gaokun3-lens-probe",
+    vendor: true,
+    srcs: [
+        "lens-probe.cpp",
+        "Lens.cpp",
+    ],
+    shared_libs: ["liblog"],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-std=c++20",
+    ],
+}
+
+// 应用视角的冒烟测试（NDK Camera2）：走 cameraserver → HAL 的真实路径，读应用会读的结果键。
+// 不进镜像（不在 PRODUCT_PACKAGES 里），`m gaokun3-ncam-smoke` 后 push 到 /data/local/tmp 跑。
+// ⚠️ 不是 vendor 模块：libcamera2ndk / libmediandk 是 system 侧的 NDK 库。
+cc_binary {
+    name: "gaokun3-ncam-smoke",
+    srcs: ["tools/ncam-smoke.cpp"],
+    shared_libs: [
+        "libbinder_ndk",
+        "libcamera2ndk",
+        "libmediandk",
+        "libnativewindow",
+    ],
+    cflags: ["-Wall", "-Werror"],
+}

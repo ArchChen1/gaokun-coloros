@@ -1,0 +1,19 @@
+# 硬件编解码服务（android.hardware.media.c2-service-v4l2，2026-09-28 起驱动是 qcom-iris）。
+#
+# 它由 sepolicy/file_contexts 标成 mediacodec_exec，于是落在 AOSP 的
+# mediacodec 域 —— binder、ashmem、gralloc 以及 /dev/video* 都现成
+# （核心 vendor/mediacodec.te:23-24 给了 video_device rw 与目录 search）。
+# ⓘ 这里原先有一条 `allow mediacodec video_device:chr_file rw_file_perms;`（Venus 时代的
+#    "预测性"规则），与核心重复，2026-09-29 删掉。
+
+# 2026-09-27 运行期 enforcing 试跑抓到（permissive 的开机日志里没露面 —— 硬解是用到才建组件）：
+#   mediacodec vendor_minigbm_debug_prop:file read   comm=DecodeComponent
+# gralloc(minigbm) 在 codec 进程里读 vendor.minigbm.debug；与 mediaserver / mediaswcodec 那两条同根。
+# 读不到也能解码（试跑里硬解照样过），但 minigbm 会拿不到 nocompression 设置。
+get_prop(mediacodec, vendor_minigbm_debug_prop)
+
+# ── 自己的 A/B 开关 vendor.gaokun3.v4l2c2.merge_csd（2026-09-29 第七轮审计）──────────
+# patches/android/v4l2-codec2/0001 让 v4l2 codec2 读这个属性；它落在 vendor_gaokun3_prop（property_contexts）。
+# 设备上 policy-query：mediacodec vendor_gaokun3_prop:file read DENY。读不到时取默认 1，解码照样工作，
+# 但开关失效。两边都是 vendor，没有 neverallow。v0.7.0 验收普查里见过 mediacodec 读它被拒。
+get_prop(mediacodec, vendor_gaokun3_prop)

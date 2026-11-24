@@ -1,0 +1,44 @@
+// Vendor audio-effect plugin for the Huawei MateBook E Go (gaokun3).
+//
+// Built with Soong inside the ROM tree rather than with the NDK: the audio data
+// path is FMQ and the NDK does not ship libfmq at all.  The shared
+// `aidlaudioeffectservice_defaults` default already brings in exactly the
+// dependencies an effect library in this HAL needs (libfmq, libutils,
+// libcutils, libbinder_ndk, the AIDL audio-effect NDK bindings and, since A17,
+// the effect framework itself -- see below), so this module only has to name
+// its sources and say where to install.
+//
+// `relative_install_path: "soundfx"` + vendor:true is what makes it land in
+// /vendor/lib64/soundfx, which is where audio_effects_config.xml looks.
+cc_library_shared {
+    name: "libgaokunhisteneffect",
+    defaults: ["aidlaudioeffectservice_defaults"],
+    // ★ The effect framework is NOT OPTIONAL, it just no longer appears here.
+    //
+    // EffectContext.cpp, EffectThread.cpp and EffectImpl.cpp are the whole
+    // effect framework: the FMQ rings, the event flag, the worker thread and the
+    // pump that calls our effectProcessImpl().  Up to A16 every effect library
+    // compiled its own copy from the filegroup ":effectCommonFile", and so did
+    // we.  A17 (crDroid 17.0 / lineage-24.0) deleted that filegroup and turned
+    // the same three files into cc_library_static "libaudioeffectaidlcommon"
+    // (hardware/interfaces/audio/aidl/default/Android.bp:394-426), which
+    // `aidlaudioeffectservice_defaults` links into every effect library
+    // (same Android.bp:357-392, static_libs) -- upstream effects such as
+    // .../default/bassboost/Android.bp now list only their own sources, too.
+    // Our subclass of EffectImpl pulls EffectImpl.o out of the archive, and with
+    // it `destroyEffect` (EffectImpl.cpp:36), which is still what exports that
+    // symbol: check the built .so for it.
+    srcs: [
+        "gaokun_effect.cpp",
+    ],
+    relative_install_path: "soundfx",
+    cflags: [
+        "-Wall",
+        "-Wno-unused-parameter",
+    ],
+    // Upstream effect libraries reach the device inside the APEX
+    // (com.android.hardware.audio native_shared_libs).  We are a plain vendor
+    // library on the vendor partition, so say so explicitly instead of relying
+    // on what the defaults happen to set.
+    installable: true,
+}

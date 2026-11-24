@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copyright (C) 2024 The Android Open Source Project
+
+     Licensed under the Apache License, Version 2.0 (the "License");
+     you may not use this file except in compliance with the License.
+     You may obtain a copy of the License at
+
+          http://www.apache.org/licenses/LICENSE-2.0
+
+     Unless required by applicable law or agreed to in writing, software
+     distributed under the License is distributed on an "AS IS" BASIS,
+     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+     See the License for the specific language governing permissions and
+     limitations under the License.
+-->
+
+<!-- Default Primary Audio HAL Module Audio Policy Configuration include file -->
+<module name="primary" halVersion="3.0">
+    <!-- ★ v1.0 AV-16（2026-10-05，⬜ 未编译、未上机）：删掉了从 cuttlefish 示例抄来的
+         Telephony Tx / Telephony Rx（mixPort telephony_tx / telephony_rx）、FM Tuner（fm_tuner）
+         与 compressed_offload（AUDIO_FORMAT_APE 的 COMPRESS_OFFLOAD 直通口）。本机没有 modem、没有 FM，
+         HAL 也没有任何压缩解码：
+           * 这几个设备在 HAL 里本来就只走桩：StreamPrimary::useStubStream() 把 IN_TELEPHONY_RX /
+             IN_FM_TUNER / OUT_TELEPHONY_TX 一律交给 DriverStubImpl（primary/StreamPrimary.cpp:196-210，
+             crDroid 17.0 未打补丁的原文；A16 时在 :245-258），不碰 ALSA，留着只会让 dumpsys 里多出几个"已连接"的假设备。
+           * 仓库里别处没有引用这些端口名（2026-10-05 grep 整个仓库确认）；
+             Telephony 接口（ModulePrimary::getTelephony()）不依赖策略里的端口，不受影响。
+           * 放音、录音、游戏都走 primary output / primary input，不经过被删的口。
+         上机判据：`dumpsys media.audio_policy` 的设备列表里不再有 Telephony / FM Tuner，
+         Outputs 里没有 compressed_offload；放音（看 PCM 状态，不必出声）、录音、插拔耳机照常。 -->
+    <attachedDevices>
+        <item>Speaker</item>
+        <item>Built-In Mic</item>
+    </attachedDevices>
+    <defaultOutputDevice>Speaker</defaultOutputDevice>
+    <mixPorts>
+        <mixPort name="primary output" role="source" flags="AUDIO_OUTPUT_FLAG_PRIMARY">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="8000 11025 16000 32000 44100 48000"
+                     channelMasks="AUDIO_CHANNEL_OUT_MONO AUDIO_CHANNEL_OUT_STEREO"/>
+        </mixPort>
+        <!-- ★ mmap_no_irq_out 已删除（2026-08-20 M4）。
+             原因：原神（Unity/AAudio）会优选 MMAP 独占低延迟流，实测拿到
+               AudioMmapOut_*, type 5 (MMAP_PLAYBACK), HAL frame count: 480
+             —— 只有 10 ms 缓冲。而本机是 AOSP 示例 HAL + 主线 audioreach，
+             没有 DSP offload，游戏又把 8 个核占满，撑不住这么小的周期：
+             /proc/asound/card0/pcm1p/sub0/status 反复出现 XRUN，表现为游戏没声音
+             （而音乐播放器走普通 AudioTrack 路径、4096 帧 / 85 ms 缓冲，一直正常）。
+             HAL 侧优先级不是原因：writer/out_0 都是 nice=-19，且有 CAP_SYS_NICE。
+             不声明 MMAP 后 AAudio 会回落到普通共享路径：延迟变高，但不会断。
+             ★ 输入侧 mmap_no_irq_in 也已删除（2026-09-28，PR #10 审查）：原先说"故意保留、无证据说明它有问题"，
+             但 HAL 对 MMAP 输入一律建 StreamInMmapStub（A17 ModulePrimary.cpp:76-80，注释写着
+             "no support for MMAP audio I/O on CVD"），根本不打开 ALSA —— 走 AAudio 低延迟独占输入的
+             App 录不到真麦克风。删掉后 AAudio 回落到普通共享路径（docs/dev/audio-video.md）。 -->
+        <!-- ★★★ 输入剖面【只声明 48000】（2026-09-27）。这是修复，不是砍功能。
+             本机全部 PCM 都定频 48 kHz（tinypcminfo d0/d1 输出、d2/d3 采集一律
+             Rate: min=48000Hz max=48000Hz），没有任何硬件重采样。而 HAL 把上层给的
+             采样率【原样】塞进 ALSA（A17 alsa/UtilsAlsa.cpp:388 config.rate = context.getSampleRate()；A16 时文件叫 alsa/Utils.cpp），
+             tinyalsa 又不会自动协商 ⇒ 真的按 44100 去开 hw:0,3，hw_params 直接被拒：
+                 proxy_open() pcm_is_ready() failed: cannot set hw params: Invalid argument
+             症状：录音产物恒为 44 字节空 WAV（只有 WAV 头）。
+
+             为什么原来会落到 44100：剖面里【列了】44100，App（如系统录音机）请求 44100
+             就成了 EXACT_MATCH，框架原样下发。删掉之后请求 44100 变成 inexact 匹配 ——
+             AudioProfileVectorHelper.cpp:checkCompatibleSamplingRate() 里
+             desiredRate=48000，48000/AUDIO_RESAMPLER_DOWN_RATIO_MAX(256)=187 <= 44100
+             ⇒ NO_ERROR，并把采样率改写成 48000 交给 HAL；AudioFlinger 的 RecordTrack
+             再把 48000 重采样回 App 要的 44100。16000/8000 同理。
+             所以上层仍可请求任意低采样率，只是物理层统一在 48 kHz 上工作。
+
+             ⚠️ 采样率这一项只靠本文件就够（HAL 的 patches/android/hardware-interfaces/0002 修的是"打开哪个 PCM"，
+             是另一个根因）。这里列的值会被 HAL 原样交给 ALSA（alsa/UtilsAlsa.cpp:388），开不了
+             要到开始录音（StreamAlsaMonoPipe::start() → StreamAlsaBase::openDeviceProxies()）才失败 —— 那时策略早已放行，结果是悄悄录出空文件；
+             而 getInputForDevice() 在 open 之后的比对又不允许 HAL 自己换成别的配置 ——
+             所以只能在本文件里只列硬件真能开的值（维护者 2026-09-28 按源码核对后改写）。
+
+             ⚠️ 输出剖面【刻意不动】：AudioOut_D / AudioOut_1D 实测都已经是 48000 Hz，
+             播放路径没坏，别改。 -->
+        <!-- ★ 声道同理【只声明 STEREO】（维护者 2026-09-28，从代码推断、未上机实测）：
+             两个采集 PCM 都是 channels min=2 max=2（docs/dev/audio-video.md，
+             tinycap -c 1 实测 cannot set hw params），而 HAL 把声道数也原样交给 ALSA
+             （alsa/UtilsAlsa.cpp:378）。列着 MONO 时单声道请求是精确匹配、原样下发，
+             推断同样会被 hw_params 拒掉；只列 STEREO 时策略（getInputProfile →
+             checkCompatibleChannelMask，录音 mixPort 走近似匹配，score 1000）把 MONO
+             配到 STEREO，由 AudioFlinger 下混。 -->
+        <mixPort name="primary input" role="sink">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="48000"
+                     channelMasks="AUDIO_CHANNEL_IN_STEREO"/>
+        </mixPort>
+   </mixPorts>
+   <devicePorts>
+        <!-- ★ address 里的 CARD_<n>_DEV_<m> 决定 HAL 开哪个 ALSA 设备：
+             hardware/interfaces/audio/aidl/default/primary/StreamPrimary.cpp
+             getCardAndDeviceId() 用 sscanf("CARD_%d_DEV_%d") 从 address 里解析，
+             解析不到就退回内置默认值（我们原本没写 address，所以从没落到扬声器）。
+             本机映射见 UCM（华为 MateBook E 直接 include ThinkPad X13s 配置）：
+               扬声器 = hw:0,1（WSA_CODEC_DMA_RX_0 ← MultiMedia2）
+               耳机   = hw:0,0（RX_CODEC_DMA_RX_0  ← MultiMedia1）
+               内置麦 = hw:0,3（VA_CODEC_DMA_TX_0  → MultiMedia4）
+               头戴麦 = hw:0,2（TX_CODEC_DMA_TX_3  → MultiMedia3） -->
+        <devicePort tagName="Speaker" type="AUDIO_DEVICE_OUT_SPEAKER" role="sink"
+                    address="CARD_0_DEV_1">
+        </devicePort>
+
+        <!-- Headset jack. Removable, so deliberately NOT in attachedDevices:
+             the framework connects these when WiredAccessoryManager reports an
+             insertion, which needs config_useDevInputEventForAudioJack=true in
+             the framework overlay (this machine has no /sys/class/switch/h2w).
+
+             ⚠️★ 这三个端口【刻意不写 address】，而 Speaker / Built-In Mic 写。
+             这不是不一致，是被逼的 —— 2026-08-21 实机查明：
+               WiredAccessoryManager 报连接时地址【永远是空串】
+               （AudioDeviceInventory 日志原文：
+                setWiredDeviceConnectionState( type:4 (sink) ... addr: name:h2w)），
+             而 HwModule.cpp 的 HwModuleCollection::getDeviceDescriptor() 里有这道守卫：
+               if (moduleDevice && allowToCreate &&
+                   (!moduleDevice->address().empty() &&
+                    moduleDevice->address().compare(devAddress) != 0)) break;
+             连接请求的 allowToCreate 是 true，于是"声明的地址非空、请求的地址为空"
+             就 break 出去改造一个动态设备 —— 那个动态设备没有任何 profile/route，
+             连接失败。症状就是 `APM failed to make available device 0x4 addr= error=1`，
+             而框架侧一路都是对的（MSG_NEW_DEVICE_STATE 有、setWiredDeviceConnectionState 有）。
+             ★ 所以：**attached 的设备可以写 address，removable 的绝对不能写。**
+
+             不写 address 之后 HAL 怎么知道开哪个 ALSA 设备？靠它的回落值，
+             而这个回落恰好就是我们要的：
+               StreamPrimary.h:61  kDefaultCardAndDeviceId{PrimaryMixer::kAlsaCard,
+                                                           PrimaryMixer::kAlsaDevice}
+               PrimaryMixer.h:27-28  kAlsaCard = 0, kAlsaDevice = 0   → hw:0,0
+             hw:0,0 正是 RX_CODEC_DMA_RX_0（MultiMedia1）耳机后端；
+             扬声器在另一个后端（WSA / MultiMedia2 / hw:0,1），两者不争用，
+             切换发生在 PCM 层面。
+             ⚠️ 耳机麦要的是 hw:0,2，回落成 (0,0) 会失败 —— 所以 v1.0 AV-10 加了"按设备类型回落"：
+             patches/android/hardware-interfaces/0007（tree-fix [21]）让 getCardAndDeviceId() 在地址解析失败时先读
+             ro.vendor.audio.primary.alsa.<类型>（device.mk 只设了 in_headset）；输出两口没设属性，
+             仍走上面这个 (0,0) 回落，行为不变。见下面耳机麦那段。
+
+             Profile 显式写出而不留空：Speaker 留空能行是因为它开机就 attached，
+             可插拔设备留空会走"连接时问 HAL"那条没验证过的路。
+             48 kHz / stereo / 16-bit 是实测跑通的配置（RUNNING、48960 帧/秒）。 -->
+        <devicePort tagName="Wired Headphones" type="AUDIO_DEVICE_OUT_WIRED_HEADPHONE"
+                    role="sink">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+        </devicePort>
+        <devicePort tagName="Wired Headset" type="AUDIO_DEVICE_OUT_WIRED_HEADSET"
+                    role="sink">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+        </devicePort>
+
+        <devicePort tagName="Built-In Mic" type="AUDIO_DEVICE_IN_BUILTIN_MIC" address="bottom CARD_0_DEV_3" role="source">
+        </devicePort>
+        <!-- ★ 耳机麦（AUDIO_DEVICE_IN_WIRED_HEADSET → AIDL IN_HEADSET + CONNECTION_ANALOG），
+             v1.0 AV-10（2026-10-05）起声明，⬜ 未编译、未上机。
+             此前【刻意不声明】：可插拔端口不能带 address（见上面那段守卫），不带 address 时
+             HAL 回落到 hw:0,0，那是个【只有播放】的设备（/dev/snd 里只有 pcmC0D0p，没有 pcmC0D0c）
+             → 打开必失败，插着耳机录音会从"能用的内置麦"退化成"什么都录不到"。
+             现在 patches/android/hardware-interfaces/0007 + device.mk 的 ro.vendor.audio.primary.alsa.in_headset=CARD_0_DEV_2
+             让它落到 hw:0,2（TX_CODEC_DMA_TX_3 → MultiMedia3）；混音器 TX 通路 audio-route.sh 开机就摆好了
+             （"耳机麦路由已应用（PCM2 / TX）"那段），这里不用再加控件。
+             ⚠️ 前提三条，缺一条就会重现上面那个退化（插耳机后录音为空）：
+               ① tree-fix [21] 打上了（构建日志里 [21] 是"已应用"/"已打过"）；
+               ② 属性在 /vendor/build.prop 里；
+               ③ 只在带麦的耳机上连接 —— 框架只有 WiredAccessoryManager 报 BIT_HEADSET（三段 + 麦检测）时
+                  才连 IN_WIRED_HEADSET，三段耳机（无麦）只连 OUT_WIRED_HEADPHONE、录音继续用内置麦。
+             ⚠️ hw:0,2 以前只在【没插耳机】时录过（RMS −62 dBFS、半数精确零，开路的样子，
+                见 docs/dev/audio-video.md），真信号与麦偏压（MIC BIAS）待上机核实。
+             Profile 与内置麦同理只写 48000 / STEREO（两个采集 PCM 都定频 48 kHz、只支持双声道，见 mixPorts 那段）。 -->
+        <devicePort tagName="Wired Headset Mic" type="AUDIO_DEVICE_IN_WIRED_HEADSET"
+                    role="source">
+            <profile name="" format="AUDIO_FORMAT_PCM_16_BIT"
+                     samplingRates="48000" channelMasks="AUDIO_CHANNEL_IN_STEREO"/>
+        </devicePort>
+    </devicePorts>
+    <routes>
+        <route type="mix" sink="Speaker"
+               sources="primary output"/>
+        <route type="mix" sink="Wired Headphones"
+               sources="primary output"/>
+        <route type="mix" sink="Wired Headset"
+               sources="primary output"/>
+        <route type="mix" sink="primary input"
+               sources="Built-In Mic,Wired Headset Mic"/>
+    </routes>
+</module>

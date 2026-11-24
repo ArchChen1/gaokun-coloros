@@ -1,0 +1,104 @@
+name: Install / boot failure / 安装与启动问题
+description: The installation failed, or the system does not start properly. / 安装失败，或者系统无法正常启动。
+labels: ["install", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sorry you ran into this. Please first check the "If it does not boot" section of the [install guide](https://github.com/vahiru/gaokun-android/blob/main/docs/INSTALL.md); many common cases are covered there.
+        遇到这种情况很抱歉。请先看一下[安装说明](https://github.com/vahiru/gaokun-android/blob/main/docs/INSTALL.zh-CN.md)里"无法开机时"一节，常见的情况那里都有说明。
+
+        This machine has no serial console, so most clues come from the installer's logs.
+        这台机器没有串口，线索主要来自安装器的日志。
+
+  - type: dropdown
+    id: method
+    attributes:
+      label: How you installed or updated / 安装或更新方式
+      options:
+        - Live installer from a USB drive / Live安装器，从U盘启动
+        - Live installer from the installer partition on the system disk / Live安装器，从系统磁盘上的安装器分区启动
+        - Windows installer / Windows安装器
+        - System update in Settings / 设置中的系统更新
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Install mode / 安装模式
+      options:
+        - Erase entire disk / 清除整个磁盘
+        - Keep existing system (dual boot with Windows) / 保留现有系统（与Windows双系统）
+        - Reinstall Android, keep data / 重新安装Android，保留数据
+        - Reinstall Android, wipe data / 重新安装Android，清除数据
+        - Delete partitions / 删除分区
+        - Delete installer partition / 删除安装器分区
+        - Uninstall Android (Windows installer) / 卸载Android（Windows安装器）
+        - Create installation media (Windows installer) / 制作安装介质（Windows安装器）
+        - Not applicable / 不适用
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where it went wrong / 出问题的环节
+      options:
+        - The installer does not start / 安装器无法启动
+        - The installer reported an error / 安装器报错
+        - No Android entry in the boot menu after installing / 安装后开机菜单里没有Android
+        - Android does not reach the desktop / Android无法进入桌面
+        - It broke after a system update / 系统更新之后出了问题
+        - Windows no longer starts, or asks for the BitLocker recovery key / Windows无法启动，或要求输入BitLocker恢复密钥
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reachable
+    attributes:
+      label: What still works / 现在还能进入什么
+      options:
+        - Android, with adb / Android，可以使用adb
+        - Windows / Windows
+        - Only the Live installer / 只有Live安装器
+        - Nothing / 都进不去
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Release and installer version / 系统与安装器版本
+      description: The installer version is shown at the bottom of its side bar. / 安装器版本显示在它的侧边栏底部。
+      placeholder: "v1.0.0-rc.4, Windows installer 0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: machine
+    attributes:
+      label: Machine / 机器
+      description: Model, SKU and BIOS version. / 型号、SKU和BIOS版本。
+      placeholder: "GK-W7X, SKU C233, BIOS 2.18"
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / 问题描述
+      description: What you did, and the exact error message if there was one. A photo of the screen is welcome. / 你做了哪些操作；如果有报错，请写下原文。也欢迎附上屏幕照片。
+    validations:
+      required: true
+
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostic files / 诊断文件
+      description: |
+        Live installer: select "Save logs" in the installer to save them to a USB drive, in a folder named `gaokun3-logs-<time>`. Windows installer: the logs are in `%ProgramData%\gaokun3\logs`. Please check the files for personal information before attaching them. The [FAQ](https://github.com/vahiru/gaokun-android/blob/main/docs/FAQ.md) describes how to collect more information.
+        Live安装器：在安装器中选择“保存日志”，日志将保存到U盘上名为`gaokun3-logs-<时间>`的文件夹中。Windows安装器：日志位于`%ProgramData%\gaokun3\logs`。上传附件前，请检查其中是否包含个人信息。更多收集方法见[常见问题](https://github.com/vahiru/gaokun-android/blob/main/docs/FAQ.zh-CN.md)。
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else / 其他补充

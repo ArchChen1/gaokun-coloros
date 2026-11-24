@@ -1,0 +1,191 @@
+# init.gaokun3.rc -- Huawei MateBook E Go (sc8280xp)
+
+# ⓘ 2026-09-29 删掉了 `on early-init` 里的 `write /proc/sys/kernel/printk "7 4 1 7"`：
+#   vendor_init 对 /proc/sys/kernel/printk（通用 proc 类型）没有 write，enforcing 下每次开机一条 denial；
+#   而内核配置本来就是这个值（CONFIG_CONSOLE_LOGLEVEL_DEFAULT=7、MESSAGE_LOGLEVEL_DEFAULT=4，
+#   设备 /proc/config.gz 实查），这一行一直是空操作。要改就改内核 cmdline 的 loglevel=。
+
+# ═════════ s2idle 休眠：★2026-08-22 已修好，默认【开启】 ═════════
+# 真凶既不是内核也不是 EC，是我们自己在 Stage 2 为 USB adb 改的那行设备树：
+# a600000.usb 被设成 dr_mode="otg" + usb-role-switch（上游是 host），
+# 而本机 UCSI 是坏的、没有任何 role 源 → 控制器停在 role=device、
+# 既没有 gadget 也没有 xhci 子设备。给这个"半初始化"状态断电
+# （系统挂起会，单纯解绑驱动也会）→【整板复位，且不留任何日志】。
+# 说明见 docs/dev/deep-sleep.md。
+#
+# ⚠️ 别再被这段历史带偏：它在 Ubuntu 上用同一棵内核复现得一模一样，
+#    于是被判过"内核/EC 缺陷、与 Android 无关"—— 那个推理排除得对（确实与
+#    Android 无关），指向的层却完全错了。设备树两边是同一份。
+#
+# 两个 wakelock 的分工（别混淆）：
+#   - gaokun3_nosuspend（本文件）：总开关。allow_suspend=1 时放开。
+#   - gaokun3_usbrole（etc/usbrole.rc + bin/gaokun3-usbrole.sh）：真正的把关者。
+#     息屏时先切 role=host 并【确认 xhci 子设备出现】才放行挂起，亮屏切回 device。
+#     确认不了就一直按住 —— 所有失败路径都停在"不许睡"这一侧。
+# ⚠️ 用户可见代价：息屏时 USB device-mode adb 断开（UDC 就在那个控制器上），
+#    亮屏即恢复。开发构建的 TCP adb（5555）不受影响；发布构建默认不开 TCP adb，
+#    无线调试走 Wi-Fi，同样不受 USB 角色影响。
+#
+# ⚠️ 排查用的副作用（记一条，省下一次两小时的误诊）：
+#   持有 wakelock 时读 /sys/power/wakeup_count 会【永久阻塞】（实测 cat 挂死 120s）。
+#   Android 的 SystemSuspend 正是卡在这一读上，所以持锁期间
+#   /sys/power/suspend_stats/success 恒为 0 —— 那不代表挂起坏了。
+#   别在探测脚本里 cat 这个节点。
+#
+# ⚠️ 必须是 `on init` 而不是 `on early-init`：早期 sysfs 还没挂好，
+#    2026-08-19 实测 early-init 写入静默失败。
+# ★ 为什么开机仍然先上锁：属性触发器要等 property_service 起来才跑，
+#   那几秒里 role 还是出厂的 device。失败方向永远选"不睡"。
+on init
+    write /sys/power/wake_lock gaokun3_nosuspend
+
+# 总开关。device.mk 的默认值是 **1**（2026-09-18～09-24 开发期曾是 0，TODO S1），
+# 属性 2026-09-18 起改名成 persist.vendor.gaokun3.*（旧名 persist.gaokun3.* 在 enforcing 下
+# 谁都写不了，理由见 device.mk 与 sepolicy/property_contexts）。
+# ⚠️ 设成 0 的机器：这个触发器开机时仍可能按镜像默认值 1 先跑一次（持久属性加载得比
+#    属性触发器晚），放掉的只是这一把；挡住挂起的是 usbrole.rc 的 gaokun3_usbrole。
+# ⚠️ 运行时 setprop ... 0 只能阻止后续的息屏切换，【不会】把这个 wakelock 重新拿回来
+#    —— 要完全回到"挡住挂起"的状态得重启。放开容易收回难，所以这里只做放开一个方向。
+on property:persist.vendor.gaokun3.allow_suspend=1
+    write /sys/power/wake_unlock gaokun3_nosuspend
+
+# ── 待机开关属性镜像：system 属性 → vendor 属性 ───────────────
+# persist.sys.gaokun3.allow_suspend（system_prop，private/property_contexts:77）镜像到
+# persist.vendor.gaokun3.allow_suspend：触发条件由 init 自己求值（vendor rc 里 persist.sys.* 的触发器要
+# vendor_init 能读 system_prop 才不被丢 —— sepolicy/vendor_init.te:16 已经给了），动作在 vendor_init 里
+# setprop（set_prop(vendor_init, vendor_gaokun3_prop)，sepolicy/vendor_gaokun3_props.te:63）。
+# ★ 用两条【字面值】而不是 ${persist.sys.gaokun3.allow_suspend} 展开：只认 0 / 1，别的值（写坏了）一律不动。
+# ★ 镜像目标本身就是 persist 属性，所以【不做开机重放】：没设过 persist.sys 的机器
+#   完全按原来的 persist.vendor 值走；设过之后两边相同。
+# 生效时机：1→0 立刻生效（亮屏时 gaokun3_usbrole 握着，息屏不再放）；0→1 从下一次息屏起生效。
+on property:persist.sys.gaokun3.allow_suspend=1
+    setprop persist.vendor.gaokun3.allow_suspend 1
+
+on property:persist.sys.gaokun3.allow_suspend=0
+    setprop persist.vendor.gaokun3.allow_suspend 0
+
+# Kernel release reported to apps (patches/kernel/core/0008, Settings → System → Kernel version spoofing).
+# load-bpf-programs is the first trigger after post-fs-data loads the persist props, and it
+# runs before zygote-start, so no app ever sees another value. Unset or off: apps see the real
+# release. A value the kernel refuses fails the write and has the same result.
+on load-bpf-programs && property:persist.sys.gaokun3.app_kernel_custom=1 && property:persist.sys.gaokun3.app_kernel_release=*
+    write /proc/sys/kernel/app_osrelease ${persist.sys.gaokun3.app_kernel_release}
+
+# ═══ 背光节点交给 lights HAL（它跑 system:system，不跑 root）═══
+# ⚠️ init 的 chown 不支持通配，所以这里写的是实际路径。它来自设备树里的 DSI
+#    节点地址 —— 换 DTB / 换面板就会变。HAL 那边是 glob 找的，写失败会在
+#    logcat 打 "写 .../brightness 失败（权限？看 init 里的 chown）"，
+#    照那条日志回来改这一行。
+# ✅ SELinux：这个节点已由 sepolicy/genfs_contexts 标成 sysfs_leds（设备 ls -LZ 实查），
+#    vendor_init 对它的 chown/chmod（setattr）核心策略现成。
+on boot
+    # LIVE-8：内核默认 DEFAULT_HUNG_TASK_TIMEOUT=120（kernel-config-android.sh），但 AOSP 的 init.rc:322（on init；A17 在 :336）
+    #   无条件写 0 把 khungtaskd 关了。这里（on boot，晚于 on init）写回 120：只告警不 panic（hung_task_panic 保持 0）。
+    #   不走 AOSP 的 ro.khungtask.enable：llkd.rc 那条路会顺带写 hung_task_panic 1 —— 一次误判就整机重启。
+    #   1.0.0-dev.3 实测：没有这一行时 /proc/sys/kernel/hung_task_timeout_secs = 0。
+    write /proc/sys/kernel/hung_task_timeout_secs 120
+    # PERF-6 第一步：background / system-background 两个 cpuset 限到 cpu0-3。
+    #   AOSP init.rc:364-398（on init；A17 在 :377-403，foreground_window 挪到了最后（:400-403，A16 也有它），同样 copy 成 0-7、这里不碰）只是把每个 cpuset 都 copy 成 /dev/cpuset/cpus（= 0-7），注释原话
+    #   "the device's init.rc must actually set the correct cpus" —— 本机从没设过，实机所有 cpuset 都是 0-7
+    #   （见 docs/dev/gaming.md）⇒ 后台任务和游戏抢同一批核。
+    #   cpu0-3 是 A78C（capacity-dmips-mhz 981，policy0 max 2438.4 MHz）、cpu4-7 是 X1C（1024，policy4 max 2688 MHz）：
+    #   refs/linux-v7.2-rc2/arch/arm64/boot/dts/qcom/sc8280xp.dtsi:49-226；频点见 overlay/…/xml/power_profile.xml 的注释。
+    #   两簇只差约 10%，所以只挪"后台"两档，foreground / top-app / restricted / camera-daemon 保持 0-7；
+    #   写法同构建树 device/linaro/dragonboard/init.common.rc:57-63（boot_completed 后 background 0、system-background 0-3）。
+    #   放在 on boot（晚于 init.rc 的 on init copy）：已经在这两个 cpuset 里的进程随 cpus 一起迁走，不怕时序。
+    #   SELinux：/dev/cpuset 是 cgroup 类型（refs/lineage-sepolicy/private/genfs_contexts:121），
+    #   vendor_init 有 cgroup:file w_file_perms（private/vendor_init.te:46）⇒ 不用加规则。
+    #   Power HAL 仍是 AOSP 示例桩（device.mk 的 android.hardware.power-service.example），这里不碰它。
+    #   ⬜ 未上机。判据：`cat /dev/cpuset/background/cpus /dev/cpuset/system-background/cpus` = 0-3、0-3，
+    #   top-app / foreground 仍 0-7；`grep Cpus_allowed_list /proc/$(pidof -s com.android.providers.media.module)/status`
+    #   之类后台进程 = 0-3；游戏帧率不低于改前（PERF-2 的 game-perf.sh 对照一次）。
+    write /dev/cpuset/background/cpus 0-3
+    write /dev/cpuset/system-background/cpus 0-3
+    chown system system /sys/class/backlight/ae96000.dsi.0/brightness
+    chmod 0664 /sys/class/backlight/ae96000.dsi.0/brightness
+
+# ⚠️ 这里绝不能自己挂 binderfs —— AOSP 16 的 init.rc 已原生处理（A17 照旧：system/core/rootdir/init.rc:280-294）
+# （挂 /dev/binderfs + 建 /dev/binder 等符号链接）。
+# 再挂一次会创建【第二个】binderfs 实例盖在上面：每个 binderfs 挂载是
+# 独立的 binder context，servicemanager 注册在旧实例上，之后的客户端
+# 全落到新实例 —— "cannot find target node" 死循环，vdc 卡死启动。
+# （内核侧 CONFIG_ANDROID_BINDERFS=y 时静态 binder 设备根本不注册，
+#   见 drivers/android/binder.c binder_init 的 IS_ENABLED 判断。）
+# 这是 aospm sdm845（Android 13 时代）模板的写法，16 上是事故源。
+# 实测踩坑记录见 docs/dev/android-bringup.md。
+
+# ⚠️ /vendor/etc/init/hw/ 不会被 init 自动扫描（自动扫的是 /vendor/etc/init/），
+# 放这里的 rc 必须显式 import，否则静默不生效。实测后果：usb rc 从未运行，
+# sys.usb.configfs 恒为 0，触发走 legacy android_usb 分支（主线内核无此 sysfs），
+# gadget 永不绑 UDC。见 docs/dev/android-bringup.md。
+import /vendor/etc/init/hw/init.gaokun3.usb.rc
+
+# ⚠️ mount_all 必须由设备 rc 调用 —— AOSP 16 的 init.rc 自己不调（A17 照旧）
+# （init.rc:511-520，A17 在 :570-578，注释明说 "Mount fstab in init.{$device}.rc by
+#   mount_all command"）。缺了它 /data 永远不挂载：post-fs-data 的
+#   mkdir 全打在只读 system 根的 /data 空目录上报 EROFS，
+#   keystore2 因 /data/misc/keystore 不存在而崩溃循环。实测见
+#   docs/dev/android-bringup.md。
+on fs
+    mount_all /vendor/etc/fstab.gaokun3 --early
+
+on late-fs
+    mount_all /vendor/etc/fstab.gaokun3 --late
+
+on post-fs-data
+    mkdir /data/vendor 0771 root root
+
+# ath11k 内置驱动开机 5s 即 probe，/vendor 未挂载拿不到固件而永久放弃；
+# vendor 挂载后（post-fs-data）手动补一次 bind。见 docs/dev/android-bringup.md
+on post-fs-data
+    write /sys/bus/pci/drivers/ath11k_pci/bind "0006:01:00.0"
+    start gaokun3_wlanap
+
+# v1.0 NET-2：给热点预建 wlan1（STA+AP 并发；libwifi-hal-emu 自己不建接口，原因见脚本头注释）。
+# 脚本等 wlan0 出现（上面那次 bind 之后固件加载要几秒）再 `iw dev wlan0 interface add wlan1`，幂等。
+# 建接口是 nl80211 NEW_INTERFACE，要 CAP_NET_ADMIN；不用 root。
+service gaokun3_wlanap /vendor/bin/gaokun3-wlan-ap.sh
+    user wifi
+    # inet：if_nametoindex 要开 AF_INET 套接字（主线内核没有 PARANOID_NETWORK，给上无害）
+    group wifi net_admin inet
+    capabilities NET_ADMIN
+    oneshot
+    disabled
+
+# 待机时让推送叫醒系统：按推送连接（Google Play 服务的 FCM 长连接）的服务器地址给 Wi-Fi 设收包唤醒规则，醒着时每 10 秒核对一次。
+# 设规则是 nl80211 SET_WOWLAN，要 CAP_NET_ADMIN；不用 root。原理见 bin/gaokun3-wifi-wake.sh 头注释。
+# 排查：logcat -s gaokun3-wifiwake。临时停用：stop gaokun3_wifiwake，再关开一次 Wi-Fi，
+# wpa_supplicant 重新设触发条件时会把已设的规则清掉。
+# oneshot：内核没有 ath11k_wow 唤醒源时脚本自己退出，不要让 init 每 5 秒重启它。
+service gaokun3_wifiwake /vendor/bin/gaokun3-wifi-wake.sh
+    user wifi
+    group wifi net_admin
+    capabilities NET_ADMIN
+    oneshot
+    disabled
+
+# remoteproc 兜底：ramdisk 里已带固件，早期 probe 正常就已 running；
+# 万一没起来（固件路径变动等），这里补一刀。ADSP 不起来就没有声卡。
+# ⚠️ 2026-09-24：不再直接写 start —— 对已在运行的 DSP 写 start 会泄漏一次引用
+#    （rproc->power +1），而这个触发器在每次 framework 软重启时都会再触发（#118 §3）。
+#    改由脚本只对【不在运行】的那颗写 start，幂等。
+service gaokun3_rprockick /vendor/bin/gaokun3-rproc-kick.sh
+    user root
+    group root
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start gaokun3_rprockick
+    start gaokun3_wifiwake
+
+# turnip 调试旗标（见 docs/dev/gpu-turnip.md）：
+# 内核 cmdline 加 androidboot.tu_debug=<flags> → ro.boot.tu_debug → 下面的属性。
+# ⚠️ 属性名按 mesa src/util/os_misc.c os_get_android_option() 推导：
+# TU_DEBUG 不以 MESA_ 开头 → 加 "mesa." 前缀 → 下划线转点+转小写
+# → "mesa.tu.debug" → 依次试前缀 "debug." / "vendor." / ""。
+# 所以必须是 debug.mesa.tu.debug —— 曾误写 debug.tu.debug，导致 2026-08-18
+# 之前所有 tu_debug 实验的旗标从未生效（"旗标全部无罪"的旧结论因此作废）。
+# cmdline 里没给时该命令失败，无副作用。
+on post-fs-data
+    setprop debug.mesa.tu.debug ${ro.boot.tu_debug}
