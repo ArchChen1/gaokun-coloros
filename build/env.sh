@@ -35,6 +35,13 @@ GK3_VENDOR_BASE="$GK3_INPUTS/vendor_base.img"
 GK3_MY_PRODUCT="$GK3_INPUTS/my_product.erofs"
 GK3_MY_STOCK="$GK3_INPUTS/my_stock.erofs"
 
+# erofs 工具：优先用 build/erofs_build.sh 装在 toolchain/ 下的钉版（1.9.4），
+# 保证不同机器（含 CI）产出同样的分区镜像；机器级配置里显式指定则以配置为准。
+_erofs_prefix="${GK3_EROFS_PREFIX:-$GK3_WORKDIR/toolchain/erofs-install}"
+if [ -x "$_erofs_prefix/bin/mkfs.erofs" ] && [ -x "$_erofs_prefix/bin/fsck.erofs" ]; then
+  : "${GK3_MKFS_EROFS:=$_erofs_prefix/bin/mkfs.erofs}"
+  : "${GK3_FSCK_EROFS:=$_erofs_prefix/bin/fsck.erofs}"
+fi
 GK3_MKFS_EROFS="${GK3_MKFS_EROFS:-mkfs.erofs}"
 GK3_FSCK_EROFS="${GK3_FSCK_EROFS:-fsck.erofs}"
 GK3_OTATOOLS="${GK3_OTATOOLS:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/tools/otatools/bin}"
