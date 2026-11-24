@@ -35,8 +35,11 @@ case "$ver" in
 esac
 
 echo '== lpmake'
-if [ -x "$(cd "$(dirname "$0")/.." && pwd)/tools/otatools/bin/lpmake" ]; then
-  echo '  OK   tools/otatools/bin/lpmake'
+LPM=$(cd "$(dirname "$0")/.." && pwd)/tools/otatools/bin/lpmake
+if [ -f "$LPM" ]; then
+  # 从 Windows 提交的文件在 Linux 上可能丢掉执行位（git 不记录 filemode），这里补上
+  [ -x "$LPM" ] || chmod +x "$LPM"
+  echo "  OK   $LPM"
 else
   echo '  FAIL 缺 tools/otatools/bin/lpmake'; exit 1
 fi
