@@ -11,18 +11,20 @@ import java.net.URL;
 /** 拉取服务端 index.json（在线更新清单）。字段见 docs/OTA-ONLINE-PLAN.md。 */
 final class ReleaseSource {
 
-    static final String DEFAULT_URL = "http://192.168.1.152:8001/ota/index.json";
+    static final String DEFAULT_URL = "https://pub-272531f7ce6d48e0b94278a2c563d637.r2.dev/gk3-ota/stable/index.json";
 
     static final class Part {
         String name;
+        String file;
         long size;
         String sha256;
     }
 
     static final class Release {
-        String version;      // 例：17.0.2 / OPD2513_17.0.2.100(CN01)
-        String channel;      // stable / beta
+        String version;
+        String channel;
         long totalSize;
+        String baseUrl;
         Part[] parts;
     }
 
@@ -33,8 +35,9 @@ final class ReleaseSource {
         c.setReadTimeout(15000);
         c.setRequestProperty("Accept", "application/json");
         try {
-            if (c.getResponseCode() != 200) {
-                throw new IOException2("HTTP " + c.getResponseCode());
+            int code = c.getResponseCode();
+            if (code != 200) {
+                throw new IOException2("清单取不到（HTTP " + code + "）");
             }
             StringBuilder sb = new StringBuilder();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream(), "UTF-8"))) {
@@ -55,17 +58,23 @@ final class ReleaseSource {
         rel.version = o.optString("version", "");
         rel.channel = o.optString("channel", "stable");
         rel.totalSize = o.optLong("total_size", 0);
+        rel.baseUrl = o.optString("base_url", "");
+        if (rel.baseUrl.isEmpty() || !rel.baseUrl.endsWith("/")) {
+            rel.baseUrl = rel.baseUrl + "/";
+        }
         JSONArray arr = o.optJSONArray("parts");
-        if (arr != null) {
-            rel.parts = new Part[arr.length()];
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject p = arr.getJSONObject(i);
-                Part part = new Part();
-                part.name = p.getString("name");
-                part.size = p.optLong("size", 0);
-                part.sha256 = p.optString("sha256", "");
-                rel.parts[i] = part;
-            }
+        if (arr == null || arr.length() == 0) {
+            throw new IOException2("清单里没有分区");
+        }
+        rel.parts = new Part[arr.length()];
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject p = arr.getJSONObject(i);
+            Part part = new Part();
+            part.name = p.getString("name");
+            part.file = p.optString("file", part.name + ".img");
+            part.size = p.optLong("size", 0);
+            part.sha256 = p.optString("sha256", "");
+            rel.parts[i] = part;
         }
         if (rel.version.isEmpty()) {
             throw new IOException2("清单缺少 version 字段");

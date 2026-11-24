@@ -32,6 +32,7 @@ Write-Host "== 2/6 链接资源与清单"
     --manifest (Join-Path $Src "AndroidManifest.xml") `
     --min-sdk-version 30 --target-sdk-version 34 `
     --java "$Work\gen" `
+    -A (Join-Path $Src "assets") `
     "$Work\res.zip"
 if ($LASTEXITCODE -ne 0) { throw "aapt2 link 失败" }
 

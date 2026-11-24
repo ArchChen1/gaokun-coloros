@@ -1,0 +1,84 @@
+{
+ "super": "/dev/block/by-name/super",
+ "note": "B 槽起始扇区，实测（docs/OTA.md）",
+ "parts": [
+  {
+   "name": "system",
+   "file": "system.erofs",
+   "start": 19660800,
+   "sectors": 2221480
+  },
+  {
+   "name": "system_ext",
+   "file": "system_ext.img",
+   "start": 21882880,
+   "sectors": 1926520
+  },
+  {
+   "name": "product",
+   "file": "product.img",
+   "start": 23810048,
+   "sectors": 327536
+  },
+  {
+   "name": "vendor",
+   "file": "vendor.img",
+   "start": 24137728,
+   "sectors": 1048576
+  },
+  {
+   "name": "odm",
+   "file": "odm.erofs",
+   "start": 25186304,
+   "sectors": 4162656
+  },
+  {
+   "name": "my_product",
+   "file": "my_product.erofs",
+   "start": 29349888,
+   "sectors": 2078016
+  },
+  {
+   "name": "my_stock",
+   "file": "my_stock.erofs",
+   "start": 31428608,
+   "sectors": 7864568
+  },
+  {
+   "name": "my_manifest",
+   "file": "my_manifest.img",
+   "start": 39294976,
+   "sectors": 1400
+  },
+  {
+   "name": "my_region",
+   "file": "my_region.img",
+   "start": 39297024,
+   "sectors": 14136
+  },
+  {
+   "name": "my_engineering",
+   "file": "my_engineering.img",
+   "start": 39311360,
+   "sectors": 656
+  },
+  {
+   "name": "my_heytap",
+   "file": "my_heytap.img",
+   "start": 39313408,
+   "sectors": 656
+  },
+  {
+   "name": "my_carrier",
+   "file": "my_carrier.img",
+   "start": 39315456,
+   "sectors": 656
+  },
+  {
+   "name": "my_bigball",
+   "file": "my_bigball.img",
+   "start": 39317504,
+   "sectors": 656
+  }
+ ]
+}
