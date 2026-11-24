@@ -21,7 +21,7 @@ import struct
 import sys
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import padding, utils
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto"))
 import update_metadata_pb2 as um  # noqa: E402
@@ -38,6 +38,8 @@ PARTS = [
     ("my_heytap", "my_heytap.img"), ("my_carrier", "my_carrier.img"),
     ("my_bigball", "my_bigball.img"),
 ]
+
+DYNAMIC_GROUP = "gaokun3_dynamic_partitions"
 
 
 def build_manifest(parts, block_size=BLOCK):
@@ -59,23 +61,50 @@ def build_manifest(parts, block_size=BLOCK):
         op.data_offset = data_offset
         op.data_length = size
         data_offset += size
-        # data_sha256_hash 留空：全量包不逐块校验
-        # 新版 update_engine 强制要求 new_partition_info（大小 + 目标哈希）
+        # 全量 REPLACE 的 data 就是整份镜像，哈希必须给（hash_checks_mandatory）
+        digest = hashlib.sha256(open(path, "rb").read()).digest()
+        op.data_sha256_hash = digest
         info = pu.new_partition_info
         info.size = size
-        info.hash = hashlib.sha256(open(path, "rb").read()).digest()
+        info.hash = digest
+
+    # 声明目标槽的分区是动态分区（super 里的逻辑分区），否则 update_engine 会
+    # 去 /dev/block/by-name/<name>_b 找块设备，而动态分区根本没有节点。
+    # snapshot/vabc 都关掉：不启用虚拟 A/B 快照，直接写目标槽那一份。
+    dpm = m.dynamic_partition_metadata
+    dpm.snapshot_enabled = False
+    dpm.vabc_enabled = False
+    group = dpm.groups.add()
+    group.name = DYNAMIC_GROUP
+    group.size = sum(size for _, _, size in parts)
+    for name, _, _ in parts:
+        group.partition_names.append(name)
     return m, data_offset
 
 
-def sign(manifest_bytes, key_path):
-    with open(key_path, "rb") as f:
-        key = serialization.load_pem_private_key(f.read(), password=None)
-    raw = key.sign(manifest_bytes, padding.PKCS1v15(), hashes.SHA256())
-    # 主版本 >= 2 的 metadata 签名是序列化后的 Signatures protobuf，不是裸字节
+def _wrap(raw):
+    # 主版本 >= 2 的签名都是序列化后的 Signatures protobuf，不是裸字节
     msg = um.Signatures()
     sig = msg.signatures.add()
     sig.data = raw
     return msg.SerializeToString()
+
+
+def sign(data, key_path):
+    with open(key_path, "rb") as f:
+        key = serialization.load_pem_private_key(f.read(), password=None)
+    return _wrap(key.sign(data, padding.PKCS1v15(), hashes.SHA256()))
+
+
+def sign_digest(digest, key_path):
+    """对已经算好的 sha256 摘要签名。
+
+    cryptography 的 PKCS1v15 默认会把输入再哈希一次，这里必须用 Prehashed，
+    否则签进去的是 sha256(sha256(...))，设备端比对必然不通过。
+    """
+    with open(key_path, "rb") as f:
+        key = serialization.load_pem_private_key(f.read(), password=None)
+    return _wrap(key.sign(digest, padding.PKCS1v15(), utils.Prehashed(hashes.SHA256())))
 
 
 def main():
@@ -98,25 +127,39 @@ def main():
         entries.append((name, path, os.path.getsize(path)))
 
     manifest, data_size = build_manifest(entries)
-    manifest_bytes = manifest.SerializeToString()
 
-    # 签名对象是 payload[0, metadata_size)，即 header + manifest，所以要先把
-    # 头部拼好再签；签名长度本身与签名的内容无关，两轮即可收敛。
-    sig_len = len(sign(manifest_bytes, a.key))
-    signature = b""
-    for _ in range(3):
-        header = MAGIC + struct.pack(">QQI", VERSION, len(manifest_bytes), sig_len)
-        metadata = header + manifest_bytes
-        signature = sign(metadata, a.key)
-        if len(signature) == sig_len:
+    # 三段式签名（AOSP 全量包的标准形态）：
+    #   [header][manifest][metadata 签名][分区数据][payload 签名 blob]
+    # blob 在文件末尾；signatures_offset 指向它，签名覆盖它之前的全部字节；
+    # metadata 签名只覆盖 header+manifest。两个签名都是 RSA-2048，序列化后的
+    # Signatures protobuf 长度固定，迭代两轮即可对齐。
+    # signatures_offset 是相对"数据区起点"的偏移，不是文件绝对偏移，
+    # 即等于数据区总长度（blob 紧跟在数据后面）。
+    manifest_bytes = manifest.SerializeToString()
+    sig_len = len(sign(b"\0" * 64, a.key))
+    for _ in range(4):
+        manifest.signatures_offset = data_size
+        manifest.signatures_size = sig_len
+        new_bytes = manifest.SerializeToString()
+        if len(new_bytes) == len(manifest_bytes):
             break
-        sig_len = len(signature)
-    # METADATA_SIZE/HASH 只覆盖 header+manifest，签名单独用 METADATA_SIGNATURE 传
-    blob = metadata + signature
+        manifest_bytes = new_bytes
+
+    header = MAGIC + struct.pack(">QQI", VERSION, len(manifest_bytes), sig_len)
+    metadata = header + manifest_bytes
+    signature = sign(metadata, a.key)
+
+    prefix_len = len(metadata) + len(signature)
+    payload_sig = sign_digest(hashlib.sha256(b"pad").digest(), a.key)  # 占位，仅取长度
+    assert len(payload_sig) == sig_len
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
+    h = hashlib.sha256()
     with open(a.out, "wb") as f:
-        f.write(blob)
+        f.write(metadata)
+        f.write(signature)
+        # AOSP 的 payload 签名哈希跳过 metadata 签名本身：hash = sha256(manifest + 数据)
+        h.update(metadata)
         for name, path, size in entries:
             with open(path, "rb") as src:
                 left = size
@@ -125,15 +168,20 @@ def main():
                     if not buf:
                         raise SystemExit(f"{name} 读取提前结束")
                     f.write(buf)
+                    h.update(buf)
                     left -= len(buf)
+        f.write(sign_digest(h.digest(), a.key))
 
     file_size = os.path.getsize(a.out)
-    file_hash = hashlib.sha256(open(a.out, "rb").read()).hexdigest()
+    file_hash = hashlib.sha256(open(a.out, "rb").read()).digest()
+    meta_hash = hashlib.sha256(metadata).digest()
 
+    # AOSP 的 payload_properties.txt 里哈希是 base64（客户端直接 base64 解码成
+    # 字节去比对），写成十六进制会被解成 48 字节垃圾，导致 kPayloadHashMismatch。
     props = {
-        "FILE_HASH": file_hash,
+        "FILE_HASH": base64.b64encode(file_hash).decode(),
         "FILE_SIZE": str(file_size),
-        "METADATA_HASH": hashlib.sha256(metadata).hexdigest(),
+        "METADATA_HASH": base64.b64encode(meta_hash).decode(),
         "METADATA_SIZE": str(len(metadata)),
         "METADATA_SIGNATURE": base64.b64encode(signature).decode(),
     }
@@ -143,7 +191,7 @@ def main():
             f.write(f"{k}={v}\n")
 
     print(f"分区 {len(entries)} 个，metadata {len(metadata)} B，payload {file_size/2**30:.2f} GiB")
-    print(f"manifest sha256 {props['METADATA_HASH'][:16]}…  签名 {len(signature)} B")
+    print(f"manifest sha256 {meta_hash.hex()[:16]}…  签名 {len(signature)} B")
     print(f"写出 {a.out}")
     print(f"写出 {props_path}")
     print(json.dumps(props, indent=1))
