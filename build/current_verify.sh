@@ -47,8 +47,13 @@ else
 fi
 
 echo '== 4. 分区产物与 src'
-chk "parts/system.erofs" '[ -s "$GK3_PARTS/system.erofs" ]'
-chk "parts/odm.erofs" '[ -s "$GK3_PARTS/odm.erofs" ]'
+if [ "${GK3_ALLOW_MISSING_PARTS:-0}" = 1 ]; then
+  # current_build.sh 第 3 步调用：system/odm 还没重打，这里不能当失败
+  printf '  SKIP parts/system.erofs（构建中）\n  SKIP parts/odm.erofs（构建中）\n'
+else
+  chk "parts/system.erofs" '[ -s "$GK3_PARTS/system.erofs" ]'
+  chk "parts/odm.erofs" '[ -s "$GK3_PARTS/odm.erofs" ]'
+fi
 chk "parts/my_product.erofs" '[ -e "$GK3_PARTS/my_product.erofs" ]'
 chk "parts/my_stock.erofs" '[ -e "$GK3_PARTS/my_stock.erofs" ]'
 for p in system_ext product my_manifest my_region my_engineering my_heytap my_carrier my_bigball; do
