@@ -1,14 +1,17 @@
 name: installer
 
-# 安装器编译验证：后端在 Linux 交叉编，应用在 Windows 编 Flutter。
-# 与上游 ego-installer-x64 流水线等价，但源码来自本仓库内置的 vendor/gaokun-android。
+# 安装器编译验证：后端在 Linux 上交叉编 ARM64（平板是 Windows-on-ARM），
+# 界面在 GitHub 的 windows-11-arm 运行器上原生编 ARM64。
+# 源码来自本仓库内置的 vendor/gaokun-android，clone 后无需子模块。
+#
+# 什么时候跑：push main（改了 vendor/ 或本文件）、PR、手动。
+# 打 installer-vX.Y.Z 标签时会建一个【草稿】Release（只放安装器 zip，Latest 留给 ROM）。
 
 on:
   push:
     branches: [main]
     paths:
       - 'vendor/gaokun-android/**'
-      - 'build.ps1'
       - '.github/workflows/installer.yml'
   pull_request:
     paths:
@@ -21,14 +24,20 @@ permissions:
 
 env:
   FLUTTER_VERSION: '3.47.2'
+  # 脚本输出有中文与"→"：Windows 运行器控制台是 cp1252，不设 UTF-8 会 UnicodeEncodeError
+  PYTHONUTF8: '1'
+  # 目录名。⚠️ 不能叫 LLVM_MINGW：Makefile 与 mke2fs/build.sh 把 LLVM_MINGW 当完整工具链路径
   LLVM_MINGW_NAME: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
   LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
   GK3: vendor/gaokun-android
 
 jobs:
   backend:
-    name: backend (x64)
+    name: backend (arm64)
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: vendor/gaokun-android
     steps:
       - uses: actions/checkout@v4
 
@@ -44,57 +53,86 @@ jobs:
           echo "LLVM_MINGW=$HOME/opt/${LLVM_MINGW_NAME}" >> "$GITHUB_ENV"
 
       - name: 主机单测
-        working-directory: ${{ env.GK3 }}
         run: make -C installer/backend test
 
-      - name: 交叉编 gk3w + sdboot
-        working-directory: ${{ env.GK3 }}
-        run: make -C installer/backend win-x64 sdboot "GK3W_VERSION=dev-${GITHUB_SHA::7}"
+      - name: 交叉编 gk3w + sdboot（arm64）
+        run: make -C installer/backend win-arm64 sdboot "GK3W_VERSION=dev-${GITHUB_SHA::7}"
 
-      - name: 编 mke2fs
-        working-directory: ${{ env.GK3 }}
-        run: bash installer/backend/mke2fs/build.sh x64
+      - name: 编 mke2fs（arm64）
+        run: bash installer/backend/mke2fs/build.sh arm64
 
       - name: 产物校验
-        working-directory: ${{ env.GK3 }}
         run: |
-          ls -l installer/backend/build/x64/gk3w.exe
-          ls -l installer/backend/build/mke2fs-x64/mke2fs.exe
+          ls -l installer/backend/build/arm64/gk3w.exe
+          ls -l installer/backend/build/mke2fs-arm64/mke2fs.exe
           ls -l installer/backend/build/sdboot/systemd-bootaa64.efi
-          file installer/backend/build/x64/gk3w.exe | tee /dev/stderr | grep -qi 'PE32+'
+          # PE 头 machine 必须是 0xAA64（ARM64），x64 的会在平板上靠模拟跑，测不出来
+          for f in installer/backend/build/arm64/gk3w.exe installer/backend/build/mke2fs-arm64/mke2fs.exe; do
+            python3 - "$f" <<'PY'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+m = struct.unpack('<H', d[struct.unpack('<I', d[0x3c:0x40])[0] + 4:][:2])[0]
+print(f"{sys.argv[1]}: machine 0x{m:04X}")
+sys.exit(0 if m == 0xAA64 else 1)
+PY
+          done
 
       - uses: actions/upload-artifact@v4
         with:
-          name: backend-x64
+          name: backend-arm64
           if-no-files-found: error
           path: |
-            vendor/gaokun-android/installer/backend/build/x64/gk3w.exe
-            vendor/gaokun-android/installer/backend/build/mke2fs-x64/mke2fs.exe
-            vendor/gaokun-android/installer/backend/build/mke2fs-x64/mke2fs.conf
+            vendor/gaokun-android/installer/backend/build/arm64/gk3w.exe
+            vendor/gaokun-android/installer/backend/build/mke2fs-arm64/mke2fs.exe
+            vendor/gaokun-android/installer/backend/build/mke2fs-arm64/mke2fs.conf
             vendor/gaokun-android/installer/backend/build/sdboot/systemd-bootaa64.efi
 
+  dart:
+    name: flutter analyze + test
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: vendor/gaokun-android/installer/windows
+    steps:
+      - uses: actions/checkout@v4
+      - name: flutter
+        working-directory: .
+        run: |
+          git clone --quiet --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+      - name: 字体
+        working-directory: vendor/gaokun-android
+        run: python3 installer/common/tool/fetch-fonts.py
+      - name: analyze + test
+        run: |
+          flutter --disable-analytics
+          flutter pub get
+          flutter analyze
+          flutter test
+
   app:
-    name: app (x64)
+    name: app (arm64)
     needs: backend
-    runs-on: windows-latest
+    runs-on: windows-11-arm
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
-          name: backend-x64
+          name: backend-arm64
           path: vendor/gaokun-android/installer/backend/build
 
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
+      - name: flutter
+        shell: pwsh
+        run: |
+          git clone --quiet --depth 1 --branch $env:FLUTTER_VERSION https://github.com/flutter/flutter.git C:\flutter
+          "C:\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: 字体
+        shell: pwsh
         run: python vendor/gaokun-android/installer/common/tool/fetch-fonts.py
 
-      - name: 编应用
+      - name: 编应用（arm64）
         shell: pwsh
         working-directory: vendor/gaokun-android/installer/windows
         run: |
@@ -106,13 +144,46 @@ jobs:
       - name: 产物校验
         shell: pwsh
         run: |
-          $rel = "vendor/gaokun-android/installer/windows/build/windows/x64/runner/Release"
-          $need = @('gk3_windows.exe','backend/gk3w.exe','backend/mke2fs.exe','backend/mke2fs.conf','backend/systemd-bootaa64.efi')
-          foreach ($f in $need) { if (-not (Test-Path "$rel/$f")) { throw "missing $rel/$f" } }
-          "$rel OK" | Write-Host
+          $rel = "vendor/gaokun-android/installer/windows/build/windows/arm64/runner/Release"
+          foreach ($f in 'gk3_windows.exe','backend/gk3w.exe','backend/mke2fs.exe','backend/mke2fs.conf','backend/systemd-bootaa64.efi') {
+            if (-not (Test-Path "$rel/$f")) { throw "missing $rel/$f" }
+          }
+          foreach ($f in 'gk3_windows.exe','backend/gk3w.exe','backend/mke2fs.exe') {
+            $m = [System.IO.File]::ReadAllBytes((Resolve-Path "$rel/$f"))
+            $machine = [BitConverter]::ToUInt16($m, [BitConverter]::ToInt32($m, 0x3c) + 4)
+            if ($machine -ne 0xAA64) { throw ("{0}: machine 0x{1:X4}, want 0xAA64" -f $f, $machine) }
+          }
+          "$rel OK（三件 PE 全 0xAA64）" | Write-Host
 
       - uses: actions/upload-artifact@v4
         with:
-          name: installer-windows-x64
+          name: installer-windows-arm64
           if-no-files-found: error
-          path: vendor/gaokun-android/installer/windows/build/windows/x64/runner/Release
+          path: vendor/gaokun-android/installer/windows/build/windows/arm64/runner/Release
+
+  release:
+    name: draft release
+    if: startsWith(github.ref, 'refs/tags/installer-v')
+    needs: [backend, dart, app]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer-windows-arm64
+          path: app
+      - name: 打包并建草稿
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ver="${GITHUB_REF_NAME#installer-v}"
+          name="gaokun-coloros-installer-$ver-windows-arm64"
+          mv app "$name"
+          zip -qr "$name.zip" "$name"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+          flags=(--draft --latest=false --verify-tag)
+          [[ "$ver" == *-* ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" "$name.zip" "$name.zip.sha256" -R "$GITHUB_REPOSITORY" "${flags[@]}" \
+            --title "Windows 安装器 $ver（ARM64）" \
+            --notes "由 CI 从 $GITHUB_REF_NAME 生成（$GITHUB_SHA）。请改写说明后再发布，不要设为 Latest。"
