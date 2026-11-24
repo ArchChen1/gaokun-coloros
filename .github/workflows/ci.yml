@@ -35,6 +35,11 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           python3 -m py_compile $(git ls-files '*.py')
+      - name: OTA 工具自检
+        run: |
+          python3 tools/ota/lp_layout.py tools/ota/testdata/gaokun3-lpdump.txt --json /tmp/lp.json \
+            | tee /dev/stderr | grep -q '槽 a: 13 个分区'
+          python3 -c 'import json;d=json.load(open("/tmp/lp.json"));assert len(d["partitions"])==26, len(d["partitions"]);print("  partitions=26")'
 
   backend:
     name: 安装器后端单测
