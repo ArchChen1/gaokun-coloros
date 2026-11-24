@@ -50,12 +50,18 @@ for t in "$GK3_MKFS_EROFS" "$GK3_FSCK_EROFS"; do
   [ -x "$t" ] || { echo "缺 erofs 工具: $t（先跑 make deps，它会编 1.9.4）"; exit 1; }
 done
 rm -f "$GK3_PARTS/system.erofs" "$GK3_PARTS/odm.erofs"
-"$GK3_MKFS_EROFS" -zlz4 -b4096 -C65536 -L system "$GK3_PARTS/system.erofs" "$GK3_SYS_TREE" >/dev/null
-"$GK3_MKFS_EROFS" -zlz4 -b4096 -C65536 -L odm "$GK3_PARTS/odm.erofs" "$GK3_ODM" >/dev/null
+# -U 固定 UUID：mkfs.erofs 默认每次随机生成，导致同输入出不同字节（可复现的第一道坎）
+M_UUID_SYSTEM=4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f601
+M_UUID_ODM=4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f602
+"$GK3_MKFS_EROFS" -zlz4 -b4096 -C65536 -L system -U "$M_UUID_SYSTEM" "$GK3_PARTS/system.erofs" "$GK3_SYS_TREE" >/dev/null
+"$GK3_MKFS_EROFS" -zlz4 -b4096 -C65536 -L odm -U "$M_UUID_ODM" "$GK3_PARTS/odm.erofs" "$GK3_ODM" >/dev/null
 "$GK3_FSCK_EROFS" "$GK3_PARTS/system.erofs" >/dev/null 2>&1 && echo "system ok $(stat -c%s "$GK3_PARTS/system.erofs")"
 "$GK3_FSCK_EROFS" "$GK3_PARTS/odm.erofs" >/dev/null 2>&1 && echo "odm ok $(stat -c%s "$GK3_PARTS/odm.erofs")"
 
 echo '== 5. 写 manifest.json'
+GK3_EROFS_VERSION=$(cat "${GK3_EROFS_PREFIX:-$GK3_WORKDIR/toolchain/erofs-install}/.version" 2>/dev/null || echo unknown)
+GK3_LPMAKE_SHA=$(sha256sum "$GK3_OTATOOLS/lpmake" 2>/dev/null | cut -d' ' -f1 || true)
+export GK3_EROFS_VERSION GK3_LPMAKE_SHA
 python3 - "$GK3_STATE" "$GK3_SRC" "$GK3_PARTS" "$VER" <<'PY'
 import datetime, hashlib, json, os, sys
 state, src, parts, ver = sys.argv[1:5]
@@ -84,6 +90,12 @@ man = {
         'system_density_trigger': 'on property:persist.sys.display.density=480 -> 320',
         'ath11k_firmware_in_system': True,
         'odm_libs': ['libjsoncpp.so', 'android.hardware.sensors-V3-ndk.so', 'libhidltransport.so'],
+    },
+    # 工具版本一起记进 manifest：分区字节会随 erofs 版本变，出问题先看这一栏
+    'build_tools': {
+        'erofs_version': os.environ.get('GK3_EROFS_VERSION') or 'unknown',
+        'lpmake_sha256': os.environ.get('GK3_LPMAKE_SHA') or 'unknown',
+        'mkfs_options': '-zlz4 -b4096 -C65536 -U <固定>',
     },
     'parts': ents,
 }
