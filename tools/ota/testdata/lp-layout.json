@@ -1,0 +1,602 @@
+{
+  "slot": 0,
+  "metadata_version": "10.2",
+  "metadata_size": 2392,
+  "metadata_max_size": 65536,
+  "metadata_slot_count": 3,
+  "header_flags": [
+    "virtual_ab_device"
+  ],
+  "partitions": [
+    {
+      "name": "system_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 2221480,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 2048
+        }
+      ],
+      "sectors": 2221480,
+      "bytes": 1137397760
+    },
+    {
+      "name": "system_ext_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 1926520,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 2224128
+        }
+      ],
+      "sectors": 1926520,
+      "bytes": 986378240
+    },
+    {
+      "name": "product_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 327536,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 4151296
+        }
+      ],
+      "sectors": 327536,
+      "bytes": 167698432
+    },
+    {
+      "name": "vendor_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 1048576,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 4478976
+        }
+      ],
+      "sectors": 1048576,
+      "bytes": 536870912
+    },
+    {
+      "name": "odm_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 4162656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 5527552
+        }
+      ],
+      "sectors": 4162656,
+      "bytes": 2131279872
+    },
+    {
+      "name": "my_product_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 2078016,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 9691136
+        }
+      ],
+      "sectors": 2078016,
+      "bytes": 1063944192
+    },
+    {
+      "name": "my_stock_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 7864568,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 11769856
+        }
+      ],
+      "sectors": 7864568,
+      "bytes": 4026658816
+    },
+    {
+      "name": "my_manifest_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 1400,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19636224
+        }
+      ],
+      "sectors": 1400,
+      "bytes": 716800
+    },
+    {
+      "name": "my_region_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 14136,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19638272
+        }
+      ],
+      "sectors": 14136,
+      "bytes": 7237632
+    },
+    {
+      "name": "my_engineering_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19652608
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "my_heytap_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19654656
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "my_carrier_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19656704
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "my_bigball_a",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19658752
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "system_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 2221480,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 19660800
+        }
+      ],
+      "sectors": 2221480,
+      "bytes": 1137397760
+    },
+    {
+      "name": "system_ext_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 1926520,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 21882880
+        }
+      ],
+      "sectors": 1926520,
+      "bytes": 986378240
+    },
+    {
+      "name": "product_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 327536,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 23810048
+        }
+      ],
+      "sectors": 327536,
+      "bytes": 167698432
+    },
+    {
+      "name": "vendor_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 1048576,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 24137728
+        }
+      ],
+      "sectors": 1048576,
+      "bytes": 536870912
+    },
+    {
+      "name": "odm_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 4162656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 25186304
+        }
+      ],
+      "sectors": 4162656,
+      "bytes": 2131279872
+    },
+    {
+      "name": "my_product_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 2078016,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 29349888
+        }
+      ],
+      "sectors": 2078016,
+      "bytes": 1063944192
+    },
+    {
+      "name": "my_stock_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 7864568,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 31428608
+        }
+      ],
+      "sectors": 7864568,
+      "bytes": 4026658816
+    },
+    {
+      "name": "my_manifest_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 1400,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 39294976
+        }
+      ],
+      "sectors": 1400,
+      "bytes": 716800
+    },
+    {
+      "name": "my_region_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 14136,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 39297024
+        }
+      ],
+      "sectors": 14136,
+      "bytes": 7237632
+    },
+    {
+      "name": "my_engineering_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 39311360
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "my_heytap_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 39313408
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "my_carrier_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 39315456
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    },
+    {
+      "name": "my_bigball_b",
+      "group": "gaokun3_dynamic_partitions_a",
+      "attributes": [],
+      "extents": [
+        {
+          "start_sector": 0,
+          "num_sectors": 656,
+          "type": "linear",
+          "target": "super",
+          "target_start_sector": 39317504
+        }
+      ],
+      "sectors": 656,
+      "bytes": 335872
+    }
+  ],
+  "layout": [
+    {
+      "partition": "system_a",
+      "start_sector": 2048,
+      "end_sector": 2223528,
+      "sectors": 2221480
+    },
+    {
+      "partition": "system_ext_a",
+      "start_sector": 2224128,
+      "end_sector": 4150648,
+      "sectors": 1926520
+    },
+    {
+      "partition": "product_a",
+      "start_sector": 4151296,
+      "end_sector": 4478832,
+      "sectors": 327536
+    },
+    {
+      "partition": "vendor_a",
+      "start_sector": 4478976,
+      "end_sector": 5527552,
+      "sectors": 1048576
+    },
+    {
+      "partition": "odm_a",
+      "start_sector": 5527552,
+      "end_sector": 9690208,
+      "sectors": 4162656
+    },
+    {
+      "partition": "my_product_a",
+      "start_sector": 9691136,
+      "end_sector": 11769152,
+      "sectors": 2078016
+    },
+    {
+      "partition": "my_stock_a",
+      "start_sector": 11769856,
+      "end_sector": 19634424,
+      "sectors": 7864568
+    },
+    {
+      "partition": "my_manifest_a",
+      "start_sector": 19636224,
+      "end_sector": 19637624,
+      "sectors": 1400
+    },
+    {
+      "partition": "my_region_a",
+      "start_sector": 19638272,
+      "end_sector": 19652408,
+      "sectors": 14136
+    },
+    {
+      "partition": "my_engineering_a",
+      "start_sector": 19652608,
+      "end_sector": 19653264,
+      "sectors": 656
+    },
+    {
+      "partition": "my_heytap_a",
+      "start_sector": 19654656,
+      "end_sector": 19655312,
+      "sectors": 656
+    },
+    {
+      "partition": "my_carrier_a",
+      "start_sector": 19656704,
+      "end_sector": 19657360,
+      "sectors": 656
+    },
+    {
+      "partition": "my_bigball_a",
+      "start_sector": 19658752,
+      "end_sector": 19659408,
+      "sectors": 656
+    },
+    {
+      "partition": "system_b",
+      "start_sector": 19660800,
+      "end_sector": 21882280,
+      "sectors": 2221480
+    },
+    {
+      "partition": "system_ext_b",
+      "start_sector": 21882880,
+      "end_sector": 23809400,
+      "sectors": 1926520
+    },
+    {
+      "partition": "product_b",
+      "start_sector": 23810048,
+      "end_sector": 24137584,
+      "sectors": 327536
+    },
+    {
+      "partition": "vendor_b",
+      "start_sector": 24137728,
+      "end_sector": 25186304,
+      "sectors": 1048576
+    },
+    {
+      "partition": "odm_b",
+      "start_sector": 25186304,
+      "end_sector": 29348960,
+      "sectors": 4162656
+    },
+    {
+      "partition": "my_product_b",
+      "start_sector": 29349888,
+      "end_sector": 31427904,
+      "sectors": 2078016
+    },
+    {
+      "partition": "my_stock_b",
+      "start_sector": 31428608,
+      "end_sector": 39293176,
+      "sectors": 7864568
+    },
+    {
+      "partition": "my_manifest_b",
+      "start_sector": 39294976,
+      "end_sector": 39296376,
+      "sectors": 1400
+    },
+    {
+      "partition": "my_region_b",
+      "start_sector": 39297024,
+      "end_sector": 39311160,
+      "sectors": 14136
+    },
+    {
+      "partition": "my_engineering_b",
+      "start_sector": 39311360,
+      "end_sector": 39312016,
+      "sectors": 656
+    },
+    {
+      "partition": "my_heytap_b",
+      "start_sector": 39313408,
+      "end_sector": 39314064,
+      "sectors": 656
+    },
+    {
+      "partition": "my_carrier_b",
+      "start_sector": 39315456,
+      "end_sector": 39316112,
+      "sectors": 656
+    },
+    {
+      "partition": "my_bigball_b",
+      "start_sector": 39317504,
+      "end_sector": 39318160,
+      "sectors": 656
+    }
+  ],
+  "block": {
+    "name": "super",
+    "first_sector": 2048,
+    "size_bytes": 21474836480
+  },
+  "groups": [
+    {
+      "name": "default",
+      "max_bytes": 0
+    },
+    {
+      "name": "gaokun3_dynamic_partitions_a",
+      "max_bytes": 21473689088
+    }
+  ],
+  "snapshot": {}
+}

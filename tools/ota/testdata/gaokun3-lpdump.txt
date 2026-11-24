@@ -1,0 +1,229 @@
+Slot 0:
+Metadata version: 10.2
+Metadata size: 2392 bytes
+Metadata max size: 65536 bytes
+Metadata slot count: 3
+Header flags: virtual_ab_device
+Partition table:
+------------------------
+  Name: system_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 2221479 linear super 2048
+------------------------
+  Name: system_ext_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 1926519 linear super 2224128
+------------------------
+  Name: product_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 327535 linear super 4151296
+------------------------
+  Name: vendor_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 1048575 linear super 4478976
+------------------------
+  Name: odm_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 4162655 linear super 5527552
+------------------------
+  Name: my_product_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 2078015 linear super 9691136
+------------------------
+  Name: my_stock_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 7864567 linear super 11769856
+------------------------
+  Name: my_manifest_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 1399 linear super 19636224
+------------------------
+  Name: my_region_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 14135 linear super 19638272
+------------------------
+  Name: my_engineering_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 19652608
+------------------------
+  Name: my_heytap_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 19654656
+------------------------
+  Name: my_carrier_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 19656704
+------------------------
+  Name: my_bigball_a
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 19658752
+------------------------
+  Name: system_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 2221479 linear super 19660800
+------------------------
+  Name: system_ext_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 1926519 linear super 21882880
+------------------------
+  Name: product_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 327535 linear super 23810048
+------------------------
+  Name: vendor_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 1048575 linear super 24137728
+------------------------
+  Name: odm_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 4162655 linear super 25186304
+------------------------
+  Name: my_product_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 2078015 linear super 29349888
+------------------------
+  Name: my_stock_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 7864567 linear super 31428608
+------------------------
+  Name: my_manifest_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 1399 linear super 39294976
+------------------------
+  Name: my_region_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 14135 linear super 39297024
+------------------------
+  Name: my_engineering_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 39311360
+------------------------
+  Name: my_heytap_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 39313408
+------------------------
+  Name: my_carrier_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 39315456
+------------------------
+  Name: my_bigball_b
+  Group: gaokun3_dynamic_partitions_a
+  Attributes: none
+  Extents:
+    0 .. 655 linear super 39317504
+------------------------
+Super partition layout:
+------------------------
+super: 2048 .. 2223528: system_a (2221480 sectors)
+super: 2224128 .. 4150648: system_ext_a (1926520 sectors)
+super: 4151296 .. 4478832: product_a (327536 sectors)
+super: 4478976 .. 5527552: vendor_a (1048576 sectors)
+super: 5527552 .. 9690208: odm_a (4162656 sectors)
+super: 9691136 .. 11769152: my_product_a (2078016 sectors)
+super: 11769856 .. 19634424: my_stock_a (7864568 sectors)
+super: 19636224 .. 19637624: my_manifest_a (1400 sectors)
+super: 19638272 .. 19652408: my_region_a (14136 sectors)
+super: 19652608 .. 19653264: my_engineering_a (656 sectors)
+super: 19654656 .. 19655312: my_heytap_a (656 sectors)
+super: 19656704 .. 19657360: my_carrier_a (656 sectors)
+super: 19658752 .. 19659408: my_bigball_a (656 sectors)
+super: 19660800 .. 21882280: system_b (2221480 sectors)
+super: 21882880 .. 23809400: system_ext_b (1926520 sectors)
+super: 23810048 .. 24137584: product_b (327536 sectors)
+super: 24137728 .. 25186304: vendor_b (1048576 sectors)
+super: 25186304 .. 29348960: odm_b (4162656 sectors)
+super: 29349888 .. 31427904: my_product_b (2078016 sectors)
+super: 31428608 .. 39293176: my_stock_b (7864568 sectors)
+super: 39294976 .. 39296376: my_manifest_b (1400 sectors)
+super: 39297024 .. 39311160: my_region_b (14136 sectors)
+super: 39311360 .. 39312016: my_engineering_b (656 sectors)
+super: 39313408 .. 39314064: my_heytap_b (656 sectors)
+super: 39315456 .. 39316112: my_carrier_b (656 sectors)
+super: 39317504 .. 39318160: my_bigball_b (656 sectors)
+------------------------
+Block device table:
+------------------------
+  Partition name: super
+  First sector: 2048
+  Size: 21474836480 bytes
+  Flags: none
+------------------------
+Group table:
+------------------------
+  Name: default
+  Maximum size: 0 bytes
+  Flags: none
+------------------------
+  Name: gaokun3_dynamic_partitions_a
+  Maximum size: 21473689088 bytes
+  Flags: none
+------------------------
+---------------
+Snapshot state:
+---------------
+Update state: none
+Using snapuserd: 0
+Using userspace snapshots: 0
+Using io_uring: 0
+Using o_direct: 0
+Using skip_verification: 0
+Cow op merge size (0 for uncapped): 0
+Worker thread count: 0
+Num verification threads: 0
+Verify block size: 0
+Using XOR compression: 0
+Current slot: _a
+Boot indicator: booting from unknown slot
+Rollback indicator: No such file or directory
+Forward merge indicator: No such file or directory
+Source build fingerprint: 
