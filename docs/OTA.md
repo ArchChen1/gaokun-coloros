@@ -13,7 +13,7 @@
 | 槽总量 | 每槽 19,647,512 sectors = 9.37 GiB，A/B 完全对称 | 一个槽塞得下 |
 | `ro.boot.slot_suffix` | `_a` | 现在从 A 启动 |
 | `ro.boot.veritymode` | `disabled`，`flash.locked=0` | B 槽写什么都不会被 AVB 拦，这条路才成立 |
-| root | 无（`su` 不存在） | 写 `/dev/block/by-name/super` 必须先恢复 root（ReSukiSU 重装） |
+| root | 已恢复（ReSukiSU 重装，`uid=0` / `ksu` 域） | 写 `/dev/block/by-name/super` 靠它 |
 | payload 工具 | 本机与仓库内都没有 `delta_generator` / `payload_generator` | 标准 OTA 的前置缺口 |
 | `otacerts.zip` | 软链到 `/my_engineering/etc/security/` | 走标准 OTA 就得自造证书并重建 my_engineering |
 
@@ -30,52 +30,76 @@
 选 B 不是偷懒：这台设备的 `veritymode=disabled`，B 槽内容本来就不校验，标准 OTA 的签名校验反而是唯一需要跨过的门槛；
 而 B 路线的每一步都能用现有产物验证（我们的 parts 就是 `lpmake` 按文件大小分配的，镜像尺寸与 metadata 严格相等）。
 
-## 工具（已落地）
+## 工具（已落地，全部真机跑通）
 
 ```bash
 # 设备侧只读勘察，不需要 root
 adb shell lpdump /dev/block/by-name/super > lpdump.txt
 python3 tools/ota/lp_layout.py lpdump.txt --json lp.json --slot b
 
-# 生成设备端写入/校验脚本（--parts-dir 指向 current/parts）
-python3 tools/ota/slot_writer.py lp.json --slot b --parts-dir "$GK3_PARTS" --out ota/
+# 生成设备端脚本（--parts-dir 指向 current/parts；--only 可只挑几个分区小步试写）
+bash build/ota_stage.sh --slot b          # 收镜像 + 调 slot_writer，产物在 $GK3_WORKDIR/ota/
 ```
 
 - `tools/ota/lp_layout.py`：解析 `lpdump`，输出分区 / 区间 / 组 / 快照状态 JSON；实测得到 13+13 个分区、A/B 9.37 GiB 对称。
 - `tools/ota/slot_writer.py`：按 metadata 生成 `write_b.sh`（`dd bs=512 seek=… conv=notrunc` 只写 B 区间）、
-  `verify_b.sh`（逐分区回读算 sha256）、`ota-manifest.json`（名字/区间/字节/sha）。尺寸与 metadata 不符会直接 FAIL。
+  `verify_b.sh`（逐分区回读算 sha256，失败 `exit 1`）、`apply_b.sh`（源镜像 sha → 写 → 回读 → 可选切槽）、
+  `rollback.sh`（切回另一槽）、`ota-manifest.json`（名字/区间/字节/sha）。尺寸与 metadata 不符会直接 FAIL。
+- `build/ota_stage.sh`：把 `current/parts` 与 `src` 的 13 个镜像收进一个 staging 目录再调 `slot_writer`，
+  免得每次手敲文件名。注意 Windows 侧 `adb.exe` 读不了 WSL 的软链，推镜像要直接用真实源路径。
 - `tools/ota/testdata/`：真机 `lpdump` 输出与解析结果，CI 里做回归。
+
+设备端用法（`/data/local/tmp/gk3-ota/` 下）：
+
+```bash
+su -c 'sh /data/local/tmp/gk3-ota/apply_b.sh'          # 只写+校验，不切槽
+su -c 'sh /data/local/tmp/gk3-ota/apply_b.sh switch'   # 校验通过后切到 B
+su -c 'sh /data/local/tmp/gk3-ota/rollback.sh'         # 从 B 切回 A（同一条命令来回切）
+```
 
 ## 阶段计划
 
 **S0（已完成）**：只读勘察 + 布局解析 + 写入脚本生成（dry-run 通过）。
 
-**S1 最小分区试写**（验收：改的是 B、A 不受影响、切槽能启动）
-1. 重装 ReSukiSU 拿到 root。
-2. `adb push` 最小分区（`my_manifest_b`，1400 sectors = 700 KiB）到 `/data/local/tmp/gk3-ota/b/`。
-3. 跑 `write_b.sh` 里对应一行 → `verify_b.sh` 回读 sha 一致。
-4. `update_engine_client --switch_slot true`（先看它的返回与 `/misc` 里 bootctrl 状态），重启确认 `slot_suffix=_b`。
-5. 再 `--switch_slot false` 回 A，确认 A 仍能起。**这一步只为了证明“切槽可控”，不写满 B。**
+**S1 / S2（已完成，2026-11-24 真机跑通）**
 
-**S2 全量写入**（验收：B 槽与本次构建逐分区 sha 一致，从 B 启动后已知功能项不掉）
-- 需要 `/data` 至少 10 GiB 空闲（13 个镜像 9.37 GiB）。
-- 写 9.37 GiB + 回读校验 9.37 GiB，NVMe 上百秒级；中途断电不影响 A。
-- 从 B 启动后按 `docs/DEVICE-TEST-CHECKLIST.md` 抽查：开机时间、密度 320、充电图标、控制中心尺寸、Wi-Fi。
+1. root 恢复后按 `tools/ota/testdata/lp-layout.json` 生成 13 个分区的写入/回读脚本。
+2. 13 个镜像 9.37 GiB 推到 `/data/local/tmp/gk3-ota/b/`（Wi-Fi adb，23–32 MB/s，约 7 分钟）。
+3. `write_b.sh` 写入 170 s，`verify_b.sh` 回读 9.37 GiB 算 sha 27 s，**13/13 分区 OK**。
+4. `update_engine_client --oplus_switch_slot=true` → 重启 → `ro.boot.slot_suffix=_b`，30 s 连上，
+   `sys.boot_completed=1`，密度 320/320，设置页正常渲染（截图见会话记录）。
+5. 在 B 上再跑一次 `--oplus_switch_slot=true` → 重启 → 回 `_a`。**来回切两趟都成功，A 槽内容从未被改。**
+6. 一条 `apply_b.sh` 从“源镜像 sha 校验”走到“回读校验”，全程 198 s，输出 `APPLY_OK`。
 
-**S3 打包与分发**
-- 包内容：13 个分区镜像 + `ota-manifest.json` + 两个脚本，打成 `ota-<ver>.tar.zst`（分片上传，复用 `inputs` 那套）。
+**切槽的真实语义（实测，别再猜）**
+
+- `--oplus_switch_slot=true` 是**切换开关**：在 A 上执行就进 B，在 B 上执行就回 A。不需要 `=false`。
+- `--switch_slot=true`（标准那个）这台机器上用不了：它要先读 `/data/ota_package/metadata`，没这文件直接
+  `Status(-8): '23: Failed to open /data/ota_package/metadata'`，`/misc` 一个字节都不动。
+- 切换只改 `/misc` 的 bootctrl 块：实测字节差 6 个 —— `0x80C`（`9f→9e`）、`0x80E`（`00→6f`，切回时 `9f`）
+  以及 `0x81C..0x81F` 的 CRC32。`0x810` 的 `_a` 字段不随之变，所以它不是“当前槽位”。
+- 应急回滚：开机进 A 后 `dd` 把切换前的 4 KiB `/misc` 快照写回去，重启即回 A（已验证一次）。
+  这条只当保险，正常路径还是走 `rollback.sh`。
+
+**S3 打包与分发**（下一步）
+- 包内容：13 个分区镜像 + `ota-manifest.json` + 脚本，打成 `ota-<ver>.tar.zst`（分片上传，复用 `inputs` 那套）。
 - 客户端按分区 sha 比对“已装 manifest”，**只下变化的**（system/odm 每次重建，其余多数不变）。
 - 断点续传 + 空间预检 + 校验失败即中止。
 
 **S4 系统内入口**
 - v43 精简删掉了 `Cota` / OTA / RomUpdate 入口 APK，`update_engine` 与 boot control 还在。
 - 先做一个最小入口（自建 Activity 或恢复原 APK），串起“下载→校验→写 B→切槽→重启”；
-- 回滚提示：切槽后首次开机若失败，`--switch_slot false` 回 A（要有可点的入口或 adb 指令说明）。
+- 回滚提示：切槽后首次开机若失败，跑一次 `--oplus_switch_slot=true` 就回另一槽（要有可点的入口或 adb 指令说明）。
 
 ## 风险与护栏
 
-- **写 `super` 需要 root**，且写的是要启动的分区：脚本只碰 `*_b` 扇区，A 槽区间硬编码来自 metadata，写错范围等于毁系统。
+- **写 `super` 需要 root**，且写的是要启动的分区：脚本只碰 `*_b` 扇区，A 槽区间来自 metadata，写错范围等于毁系统。
   护栏：`slot_writer.py` 用 metadata 的区间生成脚本，不接受手写扇区；`verify_b.sh` 逐分区回读。
-- **`--oplus_switch_slot` 语义未验证**：是“仅标记下一次启动”，还是连 bootctrl 一起改，S1 第 4 步要实测（看返回、看 `/misc`、看重启后的 `slot_suffix`）。
-- **`/data` 空间**：写 10 GiB 镜像前先 `df`；不够就分批（一次只写变更分区）。
-- **boot / dtbo / vbmeta 不在 super 里**：本路线只更新动态分区。以后要更新内核就走安装器或另做 `boot_b` 直写，别混进这条流程。
+- **切槽不校验目标槽内容**：`--oplus_switch_slot` 无条件切，B 写坏了它照样切过去。所以 `apply_b.sh` 把
+  “回读校验通过”卡在切槽之前，校验失败就 `exit 1` 不切。
+- **`/data` 空间**：写 9.37 GiB 镜像前先 `df`；不够就分批（一次只写变更分区，`--only` 支持）。
+- **`boot` / `dtbo` / `vbmeta` 不在 super 里**：本路线只更新动态分区。实测 `boot_a` 与 `boot_b` 当前 sha 相同
+  （`aaaeb1b5…ffe8`，安装器两槽都刷了），所以切 B 能起；以后换内核必须同步刷 `boot_b`，别混进这条流程。
+- **B 槽 odm 缺充电 HAL 的两个 so**（`libhidltransport.so`、`android.hardware.sensors-V3-ndk.so`）：
+  B 上 `oplus_charger_hal_service` 同样在 `restarting`，与 A 一致 —— 说明 `odm.erofs` 还没重打，是独立待办。
+

@@ -59,13 +59,17 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--slot", default="b", choices=["a", "b"])
     ap.add_argument("--parts-dir", help="分区镜像所在目录（current/parts）；不给就只做 dry-run")
     ap.add_argument("--out", default="ota", help="输出目录")
+    ap.add_argument("--only", help="只处理这些逻辑分区（逗号分隔，如 my_manifest），用于小步试写")
     args = ap.parse_args(argv[1:])
 
     layout = json.load(open(args.layout, encoding="utf-8"))
     suffix = f"_{args.slot}"
     parts = [p for p in layout["partitions"] if p["name"].endswith(suffix)]
+    if args.only:
+        keep = {x.strip() for x in args.only.split(",") if x.strip()}
+        parts = [p for p in parts if p["name"][: -len(suffix)] in keep]
     if not parts:
-        print(f"布局里没有 {suffix} 分区", file=sys.stderr)
+        print(f"布局里没有可用的 {suffix} 分区", file=sys.stderr)
         return 1
 
     os.makedirs(args.out, exist_ok=True)
@@ -140,21 +144,69 @@ def main(argv: list[str]) -> int:
             f'got=$(dd if="$SUP" bs=512 skip={e["start_sector"]} count={e["sectors"]} 2>/dev/null | sha256sum | cut -d" " -f1)\n'
             f'if [ "$got" = "{e.get("sha256", "")}" ]; then echo "  OK   {e["partition"]}"; else echo "  FAIL {e["partition"]} $got"; bad=1; fi'
         )
-    verify += ["[ $bad -eq 0 ] && echo VERIFY_B_OK || echo VERIFY_B_FAILED"]
+    verify += ["[ $bad -eq 0 ] && echo VERIFY_B_OK || { echo VERIFY_B_FAILED; exit 1; }"]
 
-    wpath = os.path.join(args.out, "write_b.sh")
-    vpath = os.path.join(args.out, "verify_b.sh")
+    # 一键脚本：校验下载物 → 写入 → 回读 → （可选）切槽。
+    # 切槽语义是实测出来的：update_engine_client --oplus_switch_slot=true 是“切到另一槽”的开关，
+    # 在 a 上跑就进 b，在 b 上再跑就回 a，不需要 --oplus_switch_slot=false（实测该值写入后 bootloader 不理）。
+    apply = [
+        "#!/system/bin/sh",
+        "# 由 tools/ota/slot_writer.py 生成：校验源镜像 → 写 " + args.slot + " 槽 → 回读比对 → 可选切槽",
+        "# 用法：sh apply_" + args.slot + ".sh [switch]   （第二个参数 switch 时，校验通过后切到另一槽）",
+        "set -e",
+        'HERE=$(cd "$(dirname "$0")" && pwd)',
+        'SRC=$(sed -n "s/^SRC=//p" "$HERE/write_' + args.slot + '.sh")',
+        'SUP=/dev/block/by-name/super',
+        "",
+        'echo "== 1/4 源镜像 sha256"',
+        "fail=0",
+    ]
+    for e in entries:
+        if not e.get("sha256"):
+            continue
+        apply.append(
+            f'got=$(sha256sum "$SRC/{e["file"]}" 2>/dev/null | cut -d" " -f1)\n'
+            f'if [ "$got" = "{e["sha256"]}" ]; then echo "  OK   {e["file"]}"; else echo "  FAIL {e["file"]} $got"; fail=1; fi'
+        )
+    apply += [
+        '[ $fail -eq 0 ] || { echo APPLY_ABORT_BAD_SOURCE; exit 1; }',
+        'echo "== 2/4 写入 ' + args.slot + ' 槽（A 槽不动）"',
+        'sh "$HERE/write_' + args.slot + '.sh"',
+        'echo "== 3/4 回读校验"',
+        'sh "$HERE/verify_' + args.slot + '.sh"',
+        'echo "== 4/4 切槽"',
+        '[ "${1:-}" = "switch" ] || { echo "APPLY_OK（未切槽；加 switch 参数才会切）"; exit 0; }',
+        'update_engine_client --oplus_switch_slot=true',
+        'echo "APPLY_SWITCHED 重启后生效：adb reboot"',
+    ]
+
+    rollback = [
+        "#!/system/bin/sh",
+        "# 切回另一槽（a↔b 反复可用）。真机上残留的切换请求会被 bootloader 消费掉，所以同一条命令就是“来回切”。",
+        "update_engine_client --oplus_switch_slot=true",
+        'echo "SLOT_TOGGLE_REQUESTED 重启后生效：adb reboot"',
+    ]
+
+    wpath = os.path.join(args.out, f"write_{args.slot}.sh")
+    vpath = os.path.join(args.out, f"verify_{args.slot}.sh")
+    apath = os.path.join(args.out, f"apply_{args.slot}.sh")
+    rpath = os.path.join(args.out, "rollback.sh")
     open(wpath, "w", encoding="utf-8", newline="\n").write("\n".join(write) + "\n")
     os.chmod(wpath, 0o755)
+    open(apath, "w", encoding="utf-8", newline="\n").write("\n".join(apply) + "\n")
+    os.chmod(apath, 0o755)
+    if not os.path.exists(rpath):
+        open(rpath, "w", encoding="utf-8", newline="\n").write("\n".join(rollback) + "\n")
+        os.chmod(rpath, 0o755)
     if all(e.get("sha256") for e in entries):
         open(vpath, "w", encoding="utf-8", newline="\n").write("\n".join(verify) + "\n")
         os.chmod(vpath, 0o755)
     else:
-        print("  （dry-run：没有 --parts-dir，不生成 verify_b.sh，清单里也没有 sha256）")
+        print("  （dry-run：没有 --parts-dir，不生成 verify 脚本，清单里也没有 sha256）")
 
     print(f"槽 {args.slot}: {len(entries)} 个分区，合计 {man['total_bytes']/2**30:.2f} GiB")
     print(f"  manifest: {man_path}")
-    print(f"  {wpath} / {vpath}")
+    print(f"  {wpath} / {vpath} / {apath}")
     print(f"  设备端镜像目录: {src_dir}")
     return 0
 
