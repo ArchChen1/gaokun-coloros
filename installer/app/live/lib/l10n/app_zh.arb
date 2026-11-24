@@ -1,0 +1,967 @@
+{
+  "@@locale": "zh",
+  "appTitle": "Gaokun Android Installer",
+  "railTitle": "Gaokun Android",
+  "railSub": "Live Installer",
+  "railWelcome": "欢迎",
+  "railMode": "安装方式",
+  "railOpts": "选项",
+  "railConfirm": "确认",
+  "railInstall": "安装",
+  "welcomeTitle": "安装Android",
+  "welcomeSub": "HUAWEI MateBook E Go · Snapdragon 8cx Gen 3 (SC8280XP)",
+  "welcomeBody": "本向导用于在本机磁盘上安装Android系统。\n后续步骤中可选择清除整个磁盘，或保留现有系统并在未分配空间中安装。",
+  "btnStart": "开始",
+  "btnQuit": "切换至终端",
+  "shellFailed": "无法切换至终端（{err}），请尝试按Ctrl+Alt+F2手动切换。",
+  "@shellFailed": {
+    "placeholders": {
+      "err": {
+        "type": "String"
+      }
+    }
+  },
+  "btnBack": "返回",
+  "btnNext": "下一步",
+  "btnReboot": "立即重启",
+  "btnRetry": "重试",
+  "btnLanguage": "English",
+  "checkTitle": "安装环境检查",
+  "checkRunning": "正在检查……",
+  "checkModel": "设备型号",
+  "checkModelOk": "华为MateBook E Go",
+  "checkModelBadTitle": "非目标机型",
+  "checkModelBad": "本安装器仅适用于2022/2023版华为MateBook E Go（GK-W7X），当前设备型号为{value}。",
+  "@checkModelBad": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "checkUnknown": "无法确认状态，将继续执行",
+  "checkBlocked": "请先解决上述未通过的检查项，再继续安装。",
+  "diskNone": "未检测到内置硬盘。",
+  "diskInternal": "内置固态硬盘",
+  "diskUnreadable": "无法读取内置硬盘的分区表。",
+  "legendExisting": "现有分区",
+  "legendFree": "未分配空间",
+  "legendTarget": "目标安装位置",
+  "modeTitle": "选择安装方式",
+  "modeSub": "请选择磁盘分区处理方式，继续前请仔细确认。",
+  "modeWipeTitle": "清除整个磁盘",
+  "modeWipeWarn": "此磁盘上的所有分区与数据（包括现有操作系统）都将被永久删除。",
+  "modeWipeBody": "清空磁盘并创建标准Android分区布局，将全部可用容量分配给Android。若此设备仅用于运行Android，建议选择此项。",
+  "modeAlongTitle": "保留现有系统",
+  "modeAlongOk": "仅在未分配空间中创建Android分区，不修改现有分区；同时在EFI系统分区中安装启动管理器（systemd-boot）并备份原有引导文件，开机时显示启动菜单。",
+  "modeAlongInfo": "可用未分配空间：{free}\n共用EFI系统分区：{esp}",
+  "@modeAlongInfo": {
+    "placeholders": {
+      "free": {
+        "type": "String"
+      },
+      "esp": {
+        "type": "String"
+      }
+    }
+  },
+  "modeWhyNoEsp": "此磁盘上未找到EFI系统分区，不存在可保留的UEFI操作系统。",
+  "modeWhyMedium": "安装器正在从此磁盘运行，无法清除整个磁盘。请选择“保留现有系统”。",
+  "modeWhyNoRelease": "未在安装介质的gaokun3/payload目录中找到完整的系统安装文件（boot.img、super.img.zst），无法安装Android。",
+  "editEntryTitle": "删除分区",
+  "editEntryBody": "删除不再需要的分区以腾出空间，例如Windows恢复分区或华为一键恢复分区。操作完成后返回此页选择安装方式。",
+  "editTitle": "删除分区",
+  "editSub": "每次删除立即生效；删除前会自动备份分区表。如需压缩现有分区，请在Windows“磁盘管理”中使用“压缩卷”。",
+  "editFree": "未分配空间",
+  "editPick": "请在左侧选择要删除的分区。",
+  "editDelete": "删除",
+  "editWhyEsp": "无法删除EFI系统分区：删除后，磁盘上的所有系统都将无法启动。",
+  "editWhyMedium": "安装器正在从此分区运行，无法删除。",
+  "editWhyInstallerPart": "此分区为安装器分区，可在“选择安装方式”页中选择“删除安装器分区”。",
+  "editDeleteWarn": "此分区中的所有数据都将丢失。",
+  "editDeleteWinre": "这是Windows恢复分区。删除后，Windows恢复环境（WinRE）将无法使用，“重置此电脑”和启动修复等依赖它的功能也将无法使用。",
+  "editDeleteOnekey": "这是华为一键恢复分区。删除后，将无法通过华为一键恢复将设备还原为出厂时的Windows。",
+  "editOk": "已删除：{what}",
+  "@editOk": {
+    "placeholders": {
+      "what": {
+        "type": "String"
+      }
+    }
+  },
+  "editFailed": "操作未完成：{err}",
+  "@editFailed": {
+    "placeholders": {
+      "err": {
+        "type": "String"
+      }
+    }
+  },
+  "editDone": "完成",
+  "modeReinstallTitle": "重新安装Android",
+  "modeReinstallWarn": "默认清空/data分区中的所有用户数据（可在“选项”步骤中选择保留）。",
+  "modeReinstallBody": "保留现有分区布局，重新写入系统镜像（super与boot分区），适用于修复系统或更换版本。",
+  "modeRmLiveTitle": "删除安装器分区",
+  "modeRmLiveBody": "删除本机磁盘上的安装器分区，释放其占用的空间。删除后，如需再次运行安装器，请使用U盘或Windows安装器。",
+  "rmLiveMerge": "将删除安装器分区{name}（{size}），其空间并入/data分区。",
+  "@rmLiveMerge": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "rmLiveFree": "将删除安装器分区{name}（{size}），其空间将成为未分配空间。",
+  "@rmLiveFree": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "rmLiveSub": "删除本机磁盘上的安装器分区。",
+  "rmLiveOk": "安装器分区已删除。",
+  "rmLiveEspKept": "EFI系统分区未还原，开机时仍会显示启动菜单。",
+  "rmLiveOkMerge": "安装器分区已删除，/data分区已扩大至{size}。",
+  "@rmLiveOkMerge": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "errReinstallMissing": "此磁盘上的Android分区不完整（缺少：{names}），无法执行重新安装。",
+  "@errReinstallMissing": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "errReinstallDup": "磁盘上存在同名的重复分区（{names}），无法确定目标分区。",
+  "@errReinstallDup": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "errReinstallSmall": "分区{name}容量不足（当前为{have}，至少需要{need}）。",
+  "@errReinstallSmall": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "have": {
+        "type": "String"
+      },
+      "need": {
+        "type": "String"
+      }
+    }
+  },
+  "optsKeepTitle": "保留用户数据",
+  "optsKeepBody": "保留/data与metadata分区而不重新格式化。若降级至较旧版本，保留旧数据可能导致系统无法正常启动。",
+  "optsKeepLiveTitle": "保留安装器分区",
+  "optsKeepLiveBody": "开启后，安装完成后保留安装器分区，之后可通过启动菜单再次进入安装器；关闭时，安装完成后将删除该分区。",
+  "optsDataWiped": "/data将被清空（{size}）",
+  "@optsDataWiped": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "optsDataKept": "保留/data现有数据（{size}）",
+  "@optsDataKept": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmReinstallHead": "将重写以下分区：",
+  "confirmReinstallRight": "保持现有分区表",
+  "actWrite": "写入镜像",
+  "actFormat": "格式化",
+  "actKeep": "保留",
+  "modeWhyNoRoom": "可用的未分配空间不足{need}（当前最大连续未分配空间为{have}）。请在Windows“磁盘管理”中使用“压缩卷”腾出空间，或删除不再需要的分区。",
+  "@modeWhyNoRoom": {
+    "placeholders": {
+      "need": {
+        "type": "String"
+      },
+      "have": {
+        "type": "String"
+      }
+    }
+  },
+  "modeWhyEspSmall": "现有EFI系统分区剩余空间不足（当前剩余{free} MiB，至少需要{need} MiB）。Windows默认创建的100 MiB EFI分区通常空间不足。",
+  "@modeWhyEspSmall": {
+    "placeholders": {
+      "free": {
+        "type": "String"
+      },
+      "need": {
+        "type": "String"
+      }
+    }
+  },
+  "modeWhyInstalled": "此磁盘上已存在Android分区（{names}）。如需覆盖安装，请选择上方的“重新安装Android”。",
+  "@modeWhyInstalled": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "optsTitle": "安装选项",
+  "optsSub": "请确认数据分区配置；如无特殊需求，可直接点击“下一步”继续。",
+  "optsData": "剩余空间将全部分配给/data分区：约{size}",
+  "@optsData": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "optsDataFixed": "/data分区容量：{size}",
+  "@optsDataFixed": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "optsDataRmLive": "删除安装器分区后，/data分区将扩大至{size}。",
+  "@optsDataRmLive": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "optsDataRmLiveFree": "删除安装器分区后，其空间将成为未分配空间（未与/data分区相邻）。",
+  "optsAdvanced": "自定义分区容量",
+  "advTitle": "自定义分区容量",
+  "advSub": "以下为即将创建的Android分区；除/data外其余分区为固定容量。无特殊需求建议保持默认值。",
+  "advReset": "恢复默认",
+  "advTotal": "已分配{used} / 共{total}",
+  "@advTotal": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "advUserdata": "/data（userdata）",
+  "advFixed": "系统固定容量",
+  "confirmTitle": "确认安装信息",
+  "confirmSub": "确认后将开始修改目标磁盘，请仔细检查以下配置。",
+  "confirmWipeHead": "以下现有分区将被全部删除：",
+  "confirmNoParts": "（此磁盘当前无任何分区）",
+  "confirmMore": "……以及其余{count}个分区",
+  "@confirmMore": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmAlongHead": "现有分区将保持不变：仅在未分配空间中新建分区，并在EFI系统分区中安装启动管理器（systemd-boot，原有引导文件自动备份）。",
+  "confirmAlongBody": "将在未分配空间中创建共{size}的Android分区，并在EFI系统分区（{esp}）中配置启动项。",
+  "@confirmAlongBody": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      },
+      "esp": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmWindowsKept": "现有Windows系统不受影响，开机时可通过启动菜单进入。",
+  "confirmWipeKeepsLive": "安装器分区{name}将保留在原位置。",
+  "@confirmWipeKeepsLive": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmRmLiveMerge": "安装完成后将删除安装器分区{name}（{size}），其空间并入/data分区。",
+  "@confirmRmLiveMerge": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmRmLiveFree": "安装完成后将删除安装器分区{name}（{size}），其空间将成为未分配空间。",
+  "@confirmRmLiveFree": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmKept": "保留",
+  "confirmVersion": "系统版本：{version}",
+  "@confirmVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "confirmNewLayout": "新建分区布局：",
+  "confirmHoldIdle": "按住2秒开始安装",
+  "holdIdle": "按住2秒",
+  "confirmHoldBusy": "请继续按住……{pct}%",
+  "@confirmHoldBusy": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
+  "runTitle": "正在安装Android",
+  "runSub": "此过程可能需要数分钟，请勿关机或断开电源。",
+  "runShowLog": "显示详细信息",
+  "runHideLog": "隐藏详细信息",
+  "doneTitle": "Android安装完成",
+  "doneBody": "请拔出安装介质，重启设备后即可进入Android系统。",
+  "failTitle": "安装未完成",
+  "failSub": "磁盘写入中途出错，磁盘分区可能处于不完整状态。请勿立即重启进入原系统，建议先将下方运行日志保存至U盘或拍照留存。",
+  "failBackup": "修改磁盘前已备份原分区表（{path}）。备份仅保存在内存中，保存运行日志时会一并保存。如需恢复安装前的分区表，请在重启前于终端中执行“gk3l restore-table --file {path}”，然后重启设备。",
+  "@failBackup": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
+  "errNoSpace": "未分配空间不足：当前可用{avail}，至少需要{need}。",
+  "@errNoSpace": {
+    "placeholders": {
+      "avail": {
+        "type": "String"
+      },
+      "need": {
+        "type": "String"
+      }
+    }
+  },
+  "errPlan": "无法生成分区方案：{msg}",
+  "@errPlan": {
+    "placeholders": {
+      "msg": {
+        "type": "String"
+      }
+    }
+  },
+  "errMbr": "此磁盘使用MBR分区表，不支持保留现有分区或单独删除分区。如需在此磁盘上安装Android，只能选择“清除整个磁盘”以重新初始化为GPT分区表。",
+  "errUserdataSmall": "/data分区容量至少需要{min}。",
+  "@errUserdataSmall": {
+    "placeholders": {
+      "min": {
+        "type": "String"
+      }
+    }
+  },
+  "errUserdataBig": "/data分区容量最多可设为{max}。",
+  "@errUserdataBig": {
+    "placeholders": {
+      "max": {
+        "type": "String"
+      }
+    }
+  },
+  "errBackend": "无法启动安装器后端进程：{detail}",
+  "@errBackend": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "errExit": "操作未完成（退出码：{code}）",
+  "@errExit": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "shellOpen": "打开终端",
+  "shellHint": "第2个虚拟终端（tty2）提供root shell及sgdisk、resize2fs等磁盘工具：按Ctrl+Alt+F2切换至终端，按Ctrl+Alt+F1返回图形界面。",
+  "fixtureBadge": "演示数据：{scenario}",
+  "@fixtureBadge": {
+    "placeholders": {
+      "scenario": {
+        "type": "String"
+      }
+    }
+  },
+  "stepPrep": "正在准备……",
+  "modeWhyEspOurs": "此EFI系统分区中已包含Gaokun Android引导项（可能由其他磁盘上的系统使用），继续安装将覆盖现有引导配置。",
+  "modeWhyNoFree": "此磁盘当前无未分配空间，至少需要{need}。请在Windows“磁盘管理”中使用“压缩卷”腾出空间，或删除不再需要的分区。",
+  "@modeWhyNoFree": {
+    "placeholders": {
+      "need": {
+        "type": "String"
+      }
+    }
+  },
+  "railReboot": "重新启动",
+  "railPoweroff": "关机",
+  "railBusy": "正在写入磁盘，完成前无法重启或关机",
+  "powerRebootTitle": "立即重启？",
+  "powerPoweroffTitle": "立即关机？",
+  "powerBody": "安装器将退出。已执行的分区删除操作仍会保留；尚未开始的系统安装不会执行。",
+  "failBackEdit": "返回修改",
+  "dataSmallWarn": "当前/data分区容量仅为{size}。单个大型游戏通常占用20–40 GiB空间，建议至少预留32 GiB。",
+  "@dataSmallWarn": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "railFooter": "v{version}",
+  "@railFooter": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "checkPower": "电源",
+  "checkPowerLow": "电量过低",
+  "checkPowerShown": "使用电池供电，电量{pct}%",
+  "@checkPowerShown": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
+  "checkPowerShownAc": "已连接电源，电量{pct}%",
+  "@checkPowerShownAc": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
+  "checkPowerBad": "当前电量低于{min}%且未连接电源。安装过程中断电可能导致磁盘分区处于不完整状态，请先连接电源适配器。",
+  "@checkPowerBad": {
+    "placeholders": {
+      "min": {
+        "type": "String"
+      }
+    }
+  },
+  "progCheck": "正在检查安装文件",
+  "progVerifySha": "正在校验SHA-256",
+  "progTestZst": "正在校验super.img.zst压缩包",
+  "progPlan": "正在规划分区布局",
+  "progWriteGpt": "正在写入分区表",
+  "progFormat": "正在格式化分区",
+  "progWriteSuper": "正在写入super分区",
+  "progWriteSuperMib": "正在写入super分区（{done} / {total}）",
+  "@progWriteSuperMib": {
+    "placeholders": {
+      "done": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "progWriteBoot": "正在写入boot_a / boot_b分区",
+  "progBootloader": "正在配置启动管理器",
+  "progDone": "已完成",
+  "progGptBackup": "正在备份分区表",
+  "progPartDelete": "正在删除分区{part}",
+  "@progPartDelete": {
+    "placeholders": {
+      "part": {
+        "type": "String"
+      }
+    }
+  },
+  "progRemoveInstaller": "正在删除安装器分区",
+  "progOther": "正在执行：{code}",
+  "@progOther": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "failUntouchedTitle": "安装尚未开始",
+  "failUntouchedSub": "写入磁盘前的预检未通过，磁盘未被修改，现有系统不受影响。可返回调整安装选项，或排除下方问题后重试。",
+  "failLogTitle": "运行日志",
+  "failLogShow": "显示运行日志",
+  "doneBodyInternal": "重启设备后即可进入Android系统。安装器所在分区仍保留在本机磁盘上，后续可通过启动菜单再次进入安装环境。",
+  "doneBodyRmLiveMerge": "安装器分区已删除，其空间已并入/data分区。重启设备后即可进入Android系统。",
+  "doneBodyRmLiveFree": "安装器分区已删除，其空间已成为未分配空间。重启设备后即可进入Android系统。",
+  "confirmOnekey": "华为一键恢复分区",
+  "confirmOnekeyWarn": "即将删除的分区中包含华为一键恢复分区（{label}）：删除后，将无法通过华为一键恢复将设备还原为出厂Windows系统。",
+  "@confirmOnekeyWarn": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "errUsage": "安装器内部错误：后端调用参数无效。",
+  "errReleaseNoBoot": "安装文件中缺少boot.img。",
+  "errReleaseNoSuper": "安装文件中未找到super.img.zst或super.img。",
+  "errSdbootMissing": "未找到启动管理器文件（systemd-bootaa64.efi）。",
+  "errToolMissing": "缺少所需工具：{tool}",
+  "@errToolMissing": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
+  "errSha256Mismatch": "{file}的SHA-256校验值与校验清单不符，安装文件不完整或已损坏。",
+  "@errSha256Mismatch": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "errZstCorrupt": "super.img.zst解压校验失败，安装文件不完整或已损坏，请重新准备安装介质。",
+  "errBootimgUnpack": "无法解包boot.img，镜像格式无效或文件已损坏。",
+  "errEspNotFat": "{esp}的文件系统为{fs}，并非有效的FAT格式EFI系统分区。",
+  "@errEspNotFat": {
+    "placeholders": {
+      "esp": {
+        "type": "String"
+      },
+      "fs": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspFull": "EFI系统分区剩余空间不足（需写入{need}，当前仅剩{free}），请先在原系统中清理EFI系统分区。",
+  "@errEspFull": {
+    "placeholders": {
+      "need": {
+        "type": "String"
+      },
+      "free": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspOtaRoom": "写入引导文件后EFI系统分区仅剩{left}，不足以支持后续Android系统更新。请先清理EFI系统分区后再试。",
+  "@errEspOtaRoom": {
+    "placeholders": {
+      "left": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspMount": "无法挂载现有的EFI系统分区（{esp}），操作已中止。",
+  "@errEspMount": {
+    "placeholders": {
+      "esp": {
+        "type": "String"
+      }
+    }
+  },
+  "errWipeMedium": "安装器正在从此磁盘运行，无法清除整个磁盘。",
+  "errLiveMissing": "此磁盘上未找到已载入内存的安装器分区。",
+  "errLiveBusy": "安装器分区正在使用中，无法删除。",
+  "errWipeMounted": "目标磁盘上仍有处于挂载状态的分区（{mounts}），无法清除磁盘。",
+  "@errWipeMounted": {
+    "placeholders": {
+      "mounts": {
+        "type": "String"
+      }
+    }
+  },
+  "errReinstallBusy": "待重写的目标分区当前处于挂载状态（{parts}），请确认安装器未从该分区运行。",
+  "@errReinstallBusy": {
+    "placeholders": {
+      "parts": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspWrite": "无法写入EFI系统分区（{esp}），可能是分区空间不足或存储介质异常。",
+  "@errEspWrite": {
+    "placeholders": {
+      "esp": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspUmount": "无法卸载EFI系统分区（{esp}），写入的数据可能未完整保存。",
+  "@errEspUmount": {
+    "placeholders": {
+      "esp": {
+        "type": "String"
+      }
+    }
+  },
+  "errSuperWrite": "写入super分区失败，请检查安装文件及目标磁盘状态。",
+  "errSuperBadLp": "写入super分区的镜像缺少有效的逻辑分区（LP）元数据，无法用于启动系统。",
+  "errPartUnknown": "无法确定分区{part}所属的磁盘设备。",
+  "@errPartUnknown": {
+    "placeholders": {
+      "part": {
+        "type": "String"
+      }
+    }
+  },
+  "errDiskUnreadable": "无法读取磁盘{disk}的分区表，磁盘未被修改。",
+  "@errDiskUnreadable": {
+    "placeholders": {
+      "disk": {
+        "type": "String"
+      }
+    }
+  },
+  "errNotBlock": "{dev}不是有效的块设备。",
+  "@errNotBlock": {
+    "placeholders": {
+      "dev": {
+        "type": "String"
+      }
+    }
+  },
+  "errKernelStale": "内核识别的分区状态与磁盘实际分区表不一致（可能有分区仍被占用），请重启设备后再试。",
+  "errOther": "安装器返回错误（代码：{code}），详细信息请查看运行日志。",
+  "@errOther": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "errNoCode": "操作未完成（退出码：{code}），详细信息请查看运行日志。",
+  "@errNoCode": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "errVerifyRemount": "写入完成后无法重新挂载{dev}，无法校验已写入的文件。",
+  "@errVerifyRemount": {
+    "placeholders": {
+      "dev": {
+        "type": "String"
+      }
+    }
+  },
+  "logsSave": "保存日志",
+  "logsTitle": "保存日志至U盘",
+  "logsPick": "请选择保存位置（建议使用独立的FAT / exFAT格式U盘，便于在其他电脑上读取）：",
+  "logsNoTarget": "未检测到可写入的FAT / exFAT分区。请插入FAT或exFAT格式的U盘，然后点击“重新检测”。",
+  "logsRescan": "重新检测",
+  "logsSaved": "日志已保存至{target}的{dir}目录，反馈问题时请附上该完整目录。",
+  "@logsSaved": {
+    "placeholders": {
+      "target": {
+        "type": "String"
+      },
+      "dir": {
+        "type": "String"
+      }
+    }
+  },
+  "runResumeTitle": "正在继续写入磁盘",
+  "runResumeSub": "安装器界面重新启动后已重新连接至后台安装进程。完成前请勿关机或断开电源。",
+  "errJobStart": "无法启动后台安装进程（systemd-run / setsid调用失败）。",
+  "errJobMissing": "未找到指定的后台安装任务（{id}）。",
+  "@errJobMissing": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "errJobLost": "后台安装进程异常终止且未返回完成状态，磁盘分区可能处于不完整状态。",
+  "errLogsNotFat": "{part}不是FAT或exFAT格式分区，仅支持将日志写入FAT / exFAT文件系统。",
+  "@errLogsNotFat": {
+    "placeholders": {
+      "part": {
+        "type": "String"
+      }
+    }
+  },
+  "errLogsReadonly": "无法以读写模式挂载{part}，请检查存储介质是否处于写保护状态。",
+  "@errLogsReadonly": {
+    "placeholders": {
+      "part": {
+        "type": "String"
+      }
+    }
+  },
+  "errLogsMount": "无法挂载分区{part}。",
+  "@errLogsMount": {
+    "placeholders": {
+      "part": {
+        "type": "String"
+      }
+    }
+  },
+  "errLogsMkdir": "无法在目标分区创建日志目录，请检查剩余空间是否充足。",
+  "errLogsIncomplete": "日志未能完整保存：{count}个文件写入失败。请检查目标分区的剩余空间是否充足，或改用其他U盘。",
+  "@errLogsIncomplete": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "modeWhyEspTooSmall": "现有EFI系统分区总容量仅为{size} MiB，不足以在容纳Android引导文件的同时为Windows更新保留足够空间，当前不支持该分区布局。",
+  "@modeWhyEspTooSmall": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "modeWhyHibernated": "检测到Windows处于休眠或“快速启动”状态。此时修改共用的EFI系统分区，可能导致Windows恢复运行时损坏分区数据。请先启动进入Windows，关闭“快速启动”并执行完整关机后再试。",
+  "confirmDefaultTitle": "选择默认启动系统",
+  "confirmDefaultLead": "设备冷启动（关机后按电源键开机）时默认进入所选系统；在Android中选择“重启”将始终回到Android。安装完成后，也可随时在Android的“设置 → 系统 → 启动选项”中更改。",
+  "confirmDefaultAndroid": "Android",
+  "confirmDefaultAndroidBody": "开机默认启动Android，需要时可在启动菜单中选择Windows。",
+  "confirmDefaultWindows": "Windows",
+  "confirmDefaultWindowsBody": "开机默认启动Windows，需要时可在启动菜单中选择Android，或从Windows重启进入Android。",
+  "confirmDefaultWindowsWhen": "安装完成后的前两次启动将自动进入Android（用于完成首次开机初始化），此后冷启动将默认进入Windows。",
+  "confirmMenu5": "双系统模式下，每次开机将显示5秒启动菜单。",
+  "confirmBitlockerHead": "检测到Windows分区已开启BitLocker加密",
+  "confirmBitlockerUsb": "安装过程将替换EFI默认引导文件（BOOTAA64.EFI），下次启动Windows时很可能需要输入48位BitLocker恢复密钥。请提前访问https://aka.ms/myrecoverykey，确认可根据恢复密钥ID获取对应的密钥；若无恢复密钥，届时将无法解锁进入Windows。",
+  "confirmBitlockerCheck": "我已备妥BitLocker恢复密钥",
+  "doneDualAndroid": "当前开机默认启动Android，也可在启动菜单中选择Windows。如需修改默认启动系统，可在Android中前往“设置 → 系统 → 启动选项”。",
+  "doneDualWindows": "接下来两次启动将自动进入Android（用于完成首次开机初始化），此后冷启动将默认进入Windows。如需修改默认启动系统，可在Android中前往“设置 → 系统 → 启动选项”。",
+  "doneNoteLoaderVar": "注意：未能清除UEFI固件中保存的默认启动项变量（{value}），开机时可能仍优先启动该项。请在启动菜单中选中当前标为默认的条目，按一次d键将其清除。",
+  "@doneNoteLoaderVar": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "doneNoteLiveKept": "注意：安装器分区未删除（{reason}）。下次进入安装器时，可在“选择安装方式”页面将其删除。",
+  "@doneNoteLiveKept": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "doneNoteFsNotGrown": "注意：/data分区已扩大，但其中的文件系统未能随之扩大，可用空间保持不变。",
+  "errDefaultOsNoWindows": "此磁盘上未找到Windows启动管理器，无法将Windows设为默认启动系统。",
+  "errEspWindowsHibernated": "检测到Windows处于休眠或“快速启动”状态（{part}），此时写入共用的EFI系统分区可能损坏分区数据。请先进入Windows关闭“快速启动”并执行完整关机后再试。",
+  "@errEspWindowsHibernated": {
+    "placeholders": {
+      "part": {
+        "type": "String"
+      }
+    }
+  },
+  "errBitlockerKeyUnconfirmed": "检测到Windows分区已开启BitLocker加密，修改引导文件后下次启动Windows可能要求输入恢复密钥。请先在确认页勾选“我已备妥BitLocker恢复密钥”。",
+  "errEspTooSmall": "EFI系统分区容量仅为{size} MiB，空间不足，无法安装。",
+  "@errEspTooSmall": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspWinReserve": "写入Android引导文件并预留后续更新空间后，EFI系统分区仅剩{left}，不足以为Windows更新与固件更新保留所需的{need}。请先在Windows中清理EFI系统分区（切勿删除Persisted_Capsules.bin、EFI\\Microsoft及EFI\\UpdateCapsule）。",
+  "@errEspWinReserve": {
+    "placeholders": {
+      "left": {
+        "type": "String"
+      },
+      "need": {
+        "type": "String"
+      }
+    }
+  },
+  "errMiscInit": "无法初始化misc分区（{dev}）。",
+  "@errMiscInit": {
+    "placeholders": {
+      "dev": {
+        "type": "String"
+      }
+    }
+  },
+  "riskTitle": "重要提示：后续操作存在数据丢失风险",
+  "riskSub": "即将修改目标磁盘的分区或引导配置。请完整阅读以下说明，倒计时结束并勾选确认后方可继续。",
+  "riskExpHead": "实验性社区移植版本",
+  "riskExpBody": "本系统为社区维护的实验性移植版本，并非华为、高通或Google官方产品，不提供任何厂商技术支持或数据安全担保。安装器经实测覆盖的软硬件环境有限，请自行评估风险。",
+  "riskDiskHead": "磁盘修改不可逆",
+  "riskDiskBody": "后续操作将修改目标磁盘的分区表或分区数据。程序异常、存储介质故障或意外断电均可能导致数据损坏乃至全部丢失；相关更改一旦执行即无法撤销，安装器也无法恢复受损数据。",
+  "riskWipeHead": "清除整个磁盘：所有现有数据将被删除",
+  "riskWipeBody": "目标磁盘上的全部现有分区（包括Windows系统、个人文件、其他操作系统及出厂恢复分区）都将被永久删除。此后如需重新使用Windows，只能通过Windows安装介质重新安装。",
+  "riskAlongHead": "保留现有系统：仍将修改分区表与EFI引导文件",
+  "riskAlongBody": "Android将安装至未分配空间，不会压缩或删除现有分区；但安装过程仍需写入GPT分区表，并在共用的EFI系统分区中安装启动管理器（systemd-boot）。若中途发生异常，现有操作系统同样可能无法正常启动。",
+  "riskReinstallHead": "重新安装Android",
+  "riskReinstallWipe": "Android系统分区将被重写，且/data分区将被格式化：已安装的应用、照片、聊天记录及所有Android用户数据都将被永久清除。",
+  "riskReinstallKeep": "Android系统分区将被重写，同时保留/data分区中的现有数据。但若降级至较旧版本或安装中途出错，原有数据仍可能无法正常读取，建议提前备份。",
+  "riskWinHead": "Windows与BitLocker恢复密钥",
+  "riskWinBody": "安装过程将在共用的EFI系统分区中安装启动管理器（systemd-boot），并替换默认引导文件（BOOTAA64.EFI，原文件将自动备份）。若Windows开启了BitLocker或“设备加密”，下次启动Windows时可能要求输入48位恢复密钥；若无恢复密钥，将无法进入Windows或读取其中的数据。继续前请访问https://aka.ms/myrecoverykey确认可获取对应的恢复密钥。",
+  "riskWinBitlocker": "检测到此磁盘上存在BitLocker加密分区，稍后在最终确认页需勾选确认已备妥恢复密钥。",
+  "riskEditHead": "被删除分区中的数据将会丢失",
+  "riskEditBody": "数据无价，请谨慎操作。",
+  "riskRmLiveHead": "删除安装器分区：此后无法再从本机磁盘启动安装器",
+  "riskRmLiveBody": "安装器分区及其中的安装文件将被删除。删除后，如需再次运行安装器，请使用U盘或Windows安装器。",
+  "riskRmLiveEsp": "删除后，将撤销写入安装器分区时对EFI系统分区所做的修改。若Windows开启了BitLocker或“设备加密”，下次启动时可能要求输入48位恢复密钥。",
+  "riskBackupHead": "请提前将重要数据备份至其他设备",
+  "riskBackupBody": "请将照片、文档、Windows个人文件及Android应用数据等重要资料备份至其他电脑、移动存储设备或云盘。保存在同一块磁盘其他分区中的数据同样面临风险，不能替代外部备份。如尚未备份，请点击“返回”并关机，完成备份后再继续。",
+  "riskPowerHead": "全程保持连接电源",
+  "riskPowerBody": "请在开始操作前连接电源适配器，并在完成前切勿断开。写入磁盘期间若意外断电或电量耗尽，将导致磁盘分区处于不完整状态，使系统无法启动或数据损坏。操作进行期间请勿长按电源键或强制重启设备。",
+  "riskNoCancelHead": "开始写入磁盘后无法中止",
+  "riskNoCancelInstall": "下一页为最终确认页：按住按钮开始写入磁盘后，操作无法取消或回退。",
+  "riskNoCancelStep": "下一页中的每项删除操作在按住确认后将立即执行，中途无法中止，执行后也无法直接撤销。",
+  "riskEnd": "—— 阅读完毕 ——",
+  "riskScrollHint": "请向下滚动阅读全文",
+  "riskCheck": "我已备份重要数据，并了解上述操作可能造成不可逆的数据丢失",
+  "riskWord": "ERASE",
+  "@riskWord": {
+    "description": "确认词。必须为纯ASCII字符：Live安装器未内置中文输入法，屏幕键盘与实体键盘均仅支持输入ASCII字符。"
+  },
+  "riskWordPrompt": "此操作将清除磁盘上的现有系统或用户数据。请在下方输入“{word}”（不区分大小写）以确认：",
+  "@riskWordPrompt": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "riskWordLabel": "确认词",
+  "riskWordWrong": "输入内容与{word}不符",
+  "@riskWordWrong": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "riskContinue": "我已了解风险，继续",
+  "riskMissing": "尚需完成：{items}",
+  "@riskMissing": {
+    "placeholders": {
+      "items": {
+        "type": "String"
+      }
+    }
+  },
+  "riskSep": "、",
+  "riskNeedScroll": "阅读至底部",
+  "riskNeedWait": "等待{sec}秒",
+  "@riskNeedWait": {
+    "placeholders": {
+      "sec": {
+        "type": "String"
+      }
+    }
+  },
+  "riskNeedCheck": "勾选确认项",
+  "riskNeedWord": "输入{word}",
+  "@riskNeedWord": {
+    "placeholders": {
+      "word": {
+        "type": "String"
+      }
+    }
+  },
+  "errRiskUnacked": "尚未完成写入磁盘前的风险确认，操作已中止，磁盘未被修改。请保存运行日志并反馈此问题。",
+  "errWrongModel": "当前设备并非华为MateBook E Go（GK-W7X）。",
+  "errLowBattery": "设备电量过低且未连接电源适配器，请连接电源后重试。",
+  "errNotRoot": "安装器后端未以root权限运行，无法访问磁盘。",
+  "errDiskOpen": "无法打开磁盘{disk}。",
+  "@errDiskOpen": {
+    "placeholders": {
+      "disk": {
+        "type": "String"
+      }
+    }
+  },
+  "errDiskSector": "此磁盘的扇区大小不受支持（仅支持512字节与4096字节）。",
+  "errDiskBusy": "目标磁盘正被系统或其他进程占用，请稍后重试。",
+  "errNoGpt": "未在此磁盘上检测到有效的GPT分区表，无法保留现有分区或单独删除分区。如需在此磁盘上安装Android，请选择“清除整个磁盘”以重新初始化为GPT分区表。",
+  "errPartTable": "无法读取目标磁盘的GPT分区表，或分区表中存在越界、重叠的分区项。",
+  "errLayoutChanged": "准备安装期间磁盘分区布局发生了变化，请返回重新选择磁盘。",
+  "errBadRegion": "目标未分配空间状态已发生变化，请返回重新选择磁盘。",
+  "errGptBackup": "无法备份磁盘分区表。",
+  "errGptFull": "分区表中已无空余的分区项，无法新建Android分区。",
+  "errGptLayout": "目标磁盘的GPT分区表结构异常，无法修改分区表。",
+  "errKernelAdd": "分区表已写入，但系统内核未能识别新分区。请重启设备后再试。",
+  "errNodeMissing": "分区表已写入，但未找到新分区{name}的设备节点。",
+  "@errNodeMissing": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "errLayoutVerify": "修改分区表后，无法确认磁盘分区布局已按预期更新。",
+  "errDiskWrite": "写入磁盘时发生错误，详细信息请查看运行日志。",
+  "errDiskVerify": "写入磁盘的数据读回后与原数据不一致，存储介质可能存在异常。",
+  "errFormat": "格式化分区时发生错误。",
+  "errEspAmbiguous": "此磁盘上存在多个EFI系统分区，无法确定目标引导分区。",
+  "errEspBusy": "EFI系统分区当前处于挂载状态（{mnt}），请先卸载后再试。",
+  "@errEspBusy": {
+    "placeholders": {
+      "mnt": {
+        "type": "String"
+      }
+    }
+  },
+  "errEspUnreadable": "无法读取EFI系统分区中的{file}，请检查该分区文件系统是否损坏。",
+  "@errEspUnreadable": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "errFallbackConflict": "EFI系统分区中的默认引导文件（BOOTAA64.EFI）属于其他操作系统，继续安装将覆盖该引导程序。请先处理现有引导配置后再试。",
+  "errEspVerify": "EFI系统分区中的{file}读回后与写入的内容不一致，存储介质可能存在异常。",
+  "@errEspVerify": {
+    "placeholders": {
+      "file": {
+        "type": "String"
+      }
+    }
+  },
+  "errRestore": "无法读取分区表备份文件，或该备份与目标磁盘不匹配。",
+  "errInternal": "安装器发生内部错误（{code}），详细信息请查看运行日志。",
+  "@errInternal": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  }
+}

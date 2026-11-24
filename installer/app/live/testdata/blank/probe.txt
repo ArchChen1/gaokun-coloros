@@ -1,0 +1,3 @@
+O DISK path=/dev/nvme0n1 size_mib=488386 sector=512 physsector=512 model=? bus=nvme removable=0 medium=no table=gpt kernel=ok
+O FREE disk=/dev/nvme0n1 start=34 end=1000214494 size_mib=488385
+X 0

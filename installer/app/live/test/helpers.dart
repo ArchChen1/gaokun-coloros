@@ -1,0 +1,231 @@
+// 流程测试与出图共用的辅助。
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gk3_common/backend/backend.dart';
+import 'package:gk3_common/backend/fixture_backend.dart';
+import 'package:gk3_common/backend/protocol.dart';
+import 'package:gk3_common/ui/widgets.dart';
+import 'package:gk3_installer/app.dart';
+import 'package:gk3_installer/l10n/app_localizations.dart';
+import 'package:gk3_installer/session.dart';
+import 'package:gk3_installer/ui/screens_risk.dart';
+
+/// 包一层 FixtureBackend：记下每一次调用；可以让某个函数失败
+class Rec extends Gk3Backend {
+  Rec(this.inner, {this.failApply = false, this.failApplyUntouched = false, this.shellError, this.holdApply, this.holdFollow});
+  final FixtureBackend inner;
+  final bool failApply;
+
+  /// gk3l apply 在第一次写盘之前的检查里失败（ERR touched=no）
+  final bool failApplyUntouched;
+
+  /// 给了就让 gk3l apply 停在半路、等它完成（看"写盘期间"界面的样子）
+  final Completer<void>? holdApply;
+
+  /// 给了就让 gk3l job follow 停在半路（接着跟一个写盘任务时的界面）
+  final Completer<void>? holdFollow;
+
+  /// 侧栏 / 完成页发出的重启与关机
+  final power = <String>[];
+
+  /// openShell 的结果（null = 切过去了）
+  final String? shellError;
+  final calls = <List<String>>[];
+
+  @override
+  String? get demoLabel => inner.demoLabel;
+
+  @override
+  Stream<Gk3Event> call(String fn, [List<String> args = const []]) async* {
+    calls.add([fn, ...args]);
+    if (fn == 'job' && args.firstOrNull == 'follow' && holdFollow != null) {
+      yield parseStderrLine('PROGRESS 30 write-super');
+      await holdFollow!.future;
+    }
+    if (fn == 'apply' && holdApply != null) {
+      yield parseStderrLine('PROGRESS 30 write-super');
+      await holdApply!.future;
+    }
+    if (fn == 'apply' && failApplyUntouched) {
+      yield parseStderrLine('PROGRESS 1 check');
+      yield parseStderrLine('ERR code=release-no-super touched=no');
+      yield const Gk3Log('!! the release directory has neither super.img.zst nor super.img');
+      yield const Gk3Exit(1);
+      return;
+    }
+    if (fn == 'apply' && failApply) {
+      yield parseStderrLine('PROGRESS 5 write-gpt');
+      yield parseStdoutLine('BACKUP path=/run/gaokun3/gpt-before-wipe-nvme0n1-20261113-120000-head2048-tail2048.bin disk=/dev/nvme0n1 sector=512 head=2048 tail=2048 ram=yes');
+      yield parseStderrLine('ERR code=disk-write part=gpt errno=5 touched=yes');
+      yield const Gk3Log('!! writing the partition table failed (the backup is listed above)');
+      yield const Gk3Exit(1);
+      return;
+    }
+    yield* inner.call(fn, args);
+  }
+
+  /// 最后一次这个命令的调用；key 可以带子命令（'job follow'）
+  List<String>? last(String key) {
+    final k = key.split(' ');
+    bool hit(List<String> c) => c.length >= k.length && [for (var i = 0; i < k.length; i++) c[i] == k[i]].every((x) => x);
+    return calls.where(hit).lastOrNull;
+  }
+
+  @override
+  Future<void> reboot() async => power.add('reboot');
+  @override
+  Future<void> poweroff() async => power.add('poweroff');
+  @override
+  Future<String?> openShell() async => shellError;
+}
+
+final l = lookupL10n(const Locale('zh'));
+
+/// 文案模板里占位符前后的固定部分：测试按它找含有运行时数值的文字，改文案不用跟着改测试。
+/// 用法：把占位符填成 [hole]，再取 [lead]（占位符之前）或 [tail]（占位符之后）
+const hole = '\u0000';
+String lead(String filled) => filled.split(hole).first;
+String tail(String filled) => filled.split(hole).last;
+final en = lookupL10n(const Locale('en'));
+
+/// 直接同步读磁盘的资源包。
+/// ★ 不用 rootBundle：它缓存 loadString 的 Future，而资源读取在测试里是真实异步 I/O ——
+///   上一个测试结束时还在飞的那次读取挂在它的 FakeAsync 区里、永远完成不了，被缓存下来，
+///   下一个测试 await 它就永远等下去（第一版：单独跑全过、一起跑 7 条挂 6 条）。
+class DiskBundle extends AssetBundle {
+  @override
+  Future<ByteData> load(String key) async => ByteData.sublistView(File(key).readAsBytesSync());
+  @override
+  Future<String> loadString(String key, {bool cache = true}) async => File(key).readAsStringSync();
+  @override
+  Future<T> loadStructuredData<T>(String key, Future<T> Function(String value) parser) async => parser(await loadString(key));
+}
+
+Future<Rec> pumpApp(WidgetTester t, String scenario,
+    {Map<String, String> overrides = const {},
+    bool failApply = false,
+    bool failApplyUntouched = false,
+    double speed = 0,
+    String language = 'zh',
+    LangPrefs? prefs,
+    String? shellError,
+    Completer<void>? holdApply,
+    Completer<void>? holdFollow}) async {
+  t.view.physicalSize = const Size(1280, 800);
+  t.view.devicePixelRatio = 1;
+  addTearDown(t.view.reset);
+  final rec = Rec(FixtureBackend(scenario, bundle: DiskBundle(), speed: speed, overrides: overrides),
+      failApply: failApply, failApplyUntouched: failApplyUntouched, shellError: shellError, holdApply: holdApply, holdFollow: holdFollow);
+  final session = Session(rec, prefs: prefs ?? LangPrefs.none);
+  if (prefs == null) session.language = language;
+  await t.pumpWidget(InstallerApp(session: session));
+  await settle(t);
+  return rec;
+}
+
+/// 页面上常有转圈（永不停的动画），pumpAndSettle 等不到头；而 fixture 是从资源里读文件，
+/// 那是真实的异步 I/O —— 所以【等到目标出现】，不按固定步数赌时序
+/// （按固定步数写的第一版：单独跑全过、一起跑一半失败）。
+Future<void> waitFor(WidgetTester t, Finder f, {int tries = 150, Duration step = const Duration(milliseconds: 20)}) async {
+  for (var i = 0; i < tries && f.evaluate().isEmpty; i++) {
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await t.pump(step);
+  }
+}
+
+Future<void> settle(WidgetTester t, [int n = 20]) async {
+  for (var i = 0; i < n; i++) {
+    await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+    await t.pump(const Duration(milliseconds: 40));
+  }
+}
+
+/// 断言某个东西出现（先等它）
+Future<void> see(WidgetTester t, Finder f, [Matcher m = findsOneWidget]) async {
+  await waitFor(t, f);
+  expect(f, m);
+}
+
+Future<void> tap(WidgetTester t, Finder f) async {
+  await waitFor(t, f);
+  await t.ensureVisible(f.first);
+  await t.tap(f.first, warnIfMissed: false);
+  await settle(t);
+}
+
+Future<void> next(WidgetTester t, [L10n? loc]) async {
+  // "下一步"要等到它可点（方案还在算的时候是禁用的）
+  final f = find.ancestor(of: find.text((loc ?? l).btnNext), matching: find.byWidgetPredicate((w) => w is ButtonStyleButton && w.onPressed != null));
+  await tap(t, f);
+}
+
+/// 写盘前的风险确认页（screens_risk.dart）：滚到底、等够时间、勾选、（要的话）输入确认词，然后继续。
+/// [check] 给了就在页面刚出来时调一次（英文界面查 CJK 用）
+Future<void> passRisk(WidgetTester t, {L10n? loc, void Function()? check}) async {
+  final x = loc ?? l;
+  await see(t, find.text(x.riskTitle));
+  check?.call();
+  await scrollRiskToEnd(t);
+  await t.pump(const Duration(seconds: RiskPage.readSeconds));
+  await settle(t);
+  await tap(t, find.byKey(kRiskCheckKey));
+  if (find.byKey(kRiskWordKey).evaluate().isNotEmpty) {
+    await t.enterText(find.byKey(kRiskWordKey), x.riskWord);
+    await settle(t);
+  }
+  await tap(t, find.text(x.riskContinue));
+}
+
+Future<void> scrollRiskToEnd(WidgetTester t) async {
+  await t.drag(find.byKey(kRiskScrollKey), const Offset(0, -30000));
+  await settle(t);
+}
+
+/// 风险确认页的"继续"能不能点
+bool riskContinueEnabled(WidgetTester t, [L10n? loc]) =>
+    t.widget<ButtonStyleButton>(find.ancestor(of: find.text((loc ?? l).riskContinue), matching: find.byWidgetPredicate((w) => w is ButtonStyleButton)).first).onPressed != null;
+
+/// 按住 2 秒（确认页）
+Future<void> hold(WidgetTester t, String idleText) async {
+  final g = await t.startGesture(t.getCenter(find.textContaining(idleText).first));
+  for (var i = 0; i < 25; i++) {
+    await t.pump(const Duration(milliseconds: 100));
+  }
+  await g.up();
+  await settle(t, 60);
+}
+
+
+/// CJK 字符（汉字、全角标点、CJK 符号）
+final cjk = RegExp(r'[\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]');
+
+/// 屏幕上（日志区以外）所有文字里出现的 CJK。"中文"是语言切换按钮自己的名字（用目标语言写它的名字），不算。
+/// ★ 日志区（LogView）是后端原样的输出、部分是中文：失败页在英文界面里默认把它收起来（INST-10 的取舍，见 FailPage）
+List<String> cjkOnScreen(WidgetTester t) {
+  final inLog = find.descendant(of: find.byType(LogView), matching: find.byType(RichText)).evaluate().map((e) => e.widget).toSet();
+  final out = <String>[];
+  for (final e in find.byType(RichText).evaluate()) {
+    if (inLog.contains(e.widget)) continue;
+    final s = (e.widget as RichText).text.toPlainText();
+    if (s == '中文') continue;
+    if (cjk.hasMatch(s)) out.add(s);
+  }
+  return out;
+}
+
+/// 记在内存里的语言偏好（测 GUI-19：记住 / gk3.lang=）
+class MemPrefs extends LangPrefs {
+  MemPrefs({this.stored, this.boot});
+  String? stored;
+  final String? boot;
+  @override
+  String? saved() => stored;
+  @override
+  String? fromBoot() => boot;
+  @override
+  void save(String lang) => stored = lang;
+}

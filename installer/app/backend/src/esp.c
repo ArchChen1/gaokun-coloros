@@ -1,0 +1,291 @@
+/* ESP 上的启动项文本与空间检查（说明见 esp.h）。 */
+#include "esp.h"
+
+#include <stdio.h>
+#include <string.h>
+
+/* 纯 Android 与双系统统一 5 秒、不写 menu-hidden */
+const char gk3w_loader_conf[] = "timeout 5\n"
+                                "console-mode keep\n"
+                                "editor no\n"
+                                "default *-android-a.conf\n";
+
+/* 写入本机磁盘的 LiveCD（gk3w media --target internal）而还没有 Android 时：默认仍进 Windows（systemd-boot 自动生成的
+ * auto-windows），LiveCD 在菜单里选。不用 LoaderEntryDefault：LiveCD 的内核带 efi=noruntime，装 Android 时删不掉它 */
+const char gk3w_loader_conf_windows[] = "timeout 5\n"
+                                        "console-mode keep\n"
+                                        "editor no\n"
+                                        "default auto-windows\n";
+
+int gk3w_is_our_loader_conf(const uint8_t *b, size_t n)
+{
+    /* boot_control HAL 切槽时只把 default 改成 *-android-b.conf（device/huawei/gaokun3 的 EspSlot.cpp），那份也是我们的 */
+    static const char conf_b[] = "timeout 5\n"
+                                 "console-mode keep\n"
+                                 "editor no\n"
+                                 "default *-android-b.conf\n";
+    const char *ours[3] = {gk3w_loader_conf, conf_b, gk3w_loader_conf_windows};
+    for (int i = 0; i < 3; i++)
+        if (n == strlen(ours[i]) && !memcmp(b, ours[i], n))
+            return 1;
+    return 0;
+}
+
+static char lower_ascii(char c)
+{
+    return (c >= 'A' && c <= 'Z') ? (char)(c - 'A' + 'a') : c;
+}
+
+static int is_digit(char c)
+{
+    return c >= '0' && c <= '9';
+}
+
+static int ends_with(const char *s, size_t n, const char *suf)
+{
+    size_t k = strlen(suf);
+    return n >= k && !memcmp(s + n - k, suf, k);
+}
+
+int gk3w_our_entry_name(const char *name)
+{
+    char n[256];
+    size_t len = strlen(name), i;
+    if (!len || len >= sizeof n)
+        return 0;
+    for (i = 0; i < len; i++)
+        n[i] = lower_ascii(name[i]);
+    n[len] = 0;
+    if (ends_with(n, len, ".disabled"))
+        n[len -= 9] = 0;
+    if (!ends_with(n, len, ".conf"))
+        return 0;
+    n[len -= 5] = 0;
+    {
+        /* 启动计数后缀：结尾的 +N 或 +N-M */
+        char *plus = strrchr(n, '+');
+        if (plus && is_digit(plus[1])) {
+            const char *q = plus + 1;
+            while (is_digit(*q))
+                q++;
+            if (*q == '-' && is_digit(q[1]))
+                for (q++; is_digit(*q); q++)
+                    ;
+            if (!*q) {
+                *plus = 0;
+                len = (size_t)(plus - n);
+            }
+        }
+    }
+    if (!strncmp(n, "gk3", 3))
+        return 1;
+    if (!strncmp(n, "gaokun3-live", 12)) {
+        const char *q = n + 12;
+        if (!*q)
+            return 1;
+        if (*q != '-' || !is_digit(q[1]))
+            return 0;
+        for (q++; is_digit(*q); q++)
+            ;
+        return !*q;
+    }
+    if (len > 33 && n[32] == '-') {
+        static const char *const kinds[] = {"android", "rescue", "recovery"};
+        char mid[33];
+        memcpy(mid, n, 32);
+        mid[32] = 0;
+        if (!gk3w_is_machine_id(mid))
+            return 0;
+        for (size_t k = 0; k < 3; k++) {
+            size_t kl = strlen(kinds[k]);
+            const char *q = n + 33;
+            if (strncmp(q, kinds[k], kl))
+                continue;
+            q += kl;
+            if (!*q || (q[0] == '-' && (q[1] == 'a' || q[1] == 'b') && !q[2]))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static int ieq_ascii(const char *a, const char *b)
+{
+    for (; *a && *b; a++, b++)
+        if (lower_ascii(*a) != lower_ascii(*b))
+            return 0;
+    return *a == *b;
+}
+
+int gk3w_our_var_value(const char *v)
+{
+    size_t len = strlen(v), i;
+    char tail[16];
+    if (ieq_ascii(v, "auto-windows") || ieq_ascii(v, "gk3-windows.conf"))
+        return 1;
+    /* ^[0-9A-Za-z*?._+-]*-android-[ab]\.conf$（PowerShell 的 -match 不分大小写） */
+    for (i = 0; i < len; i++) {
+        char c = v[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || strchr("*?._+-", c)))
+            break;
+    }
+    if (i == len && len >= 15) {
+        for (i = 0; i < 15; i++)
+            tail[i] = lower_ascii(v[len - 15 + i]);
+        tail[15] = 0;
+        if (!strcmp(tail, "-android-a.conf") || !strcmp(tail, "-android-b.conf"))
+            return 1;
+    }
+    return gk3w_our_entry_name(v);
+}
+
+/* 版本资源里 key 的值是不是 value：UTF-16LE 的 "key\0"，按 4 字节对齐补 0 或 2 个字节，再接 UTF-16LE 的 "value\0" */
+static int vs_string_is(const uint8_t *b, size_t n, const char *key, const char *value)
+{
+    uint8_t k[64], v[64];
+    size_t kl = 0, vl = 0;
+    for (const char *p = key;; p++) {
+        k[kl++] = (uint8_t)*p;
+        k[kl++] = 0;
+        if (!*p)
+            break;
+    }
+    for (const char *p = value;; p++) {
+        v[vl++] = (uint8_t)*p;
+        v[vl++] = 0;
+        if (!*p)
+            break;
+    }
+    for (size_t i = 0; i + kl + 2 + vl <= n; i++) {
+        if (memcmp(b + i, k, kl))
+            continue;
+        for (size_t pad = 0; pad <= 2; pad += 2) {
+            const uint8_t *q = b + i + kl;
+            if (pad && (q[0] || q[1]))
+                continue;
+            if (!memcmp(q + pad, v, vl))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+int gk3w_is_windows_boot_manager(const uint8_t *b, size_t n)
+{
+    return vs_string_is(b, n, "CompanyName", "Microsoft Corporation") && vs_string_is(b, n, "FileDescription", "Boot Manager");
+}
+
+int gk3w_is_systemd_boot(const uint8_t *b, size_t n)
+{
+    static const char tag[] = "#### LoaderInfo: systemd-boot ";
+    const size_t tl = sizeof tag - 1;
+    for (size_t i = 0; i + tl <= n; i++)
+        if (b[i] == '#' && !memcmp(b + i, tag, tl))
+            return 1;
+    return 0;
+}
+
+static int same_bytes(const uint8_t *a, size_t al, const uint8_t *b, size_t bl)
+{
+    return a && b && al == bl && !memcmp(a, b, al);
+}
+
+gk3w_fallback_action gk3w_fallback_decide(const uint8_t *cur, size_t cur_len, const uint8_t *w, size_t w_len,
+                                          const uint8_t *bak, size_t bak_len)
+{
+    /* systemd-boot 的备份当作没有：那是我们早先装的，或者一个已经没有配置的 systemd-boot */
+    int bak_ok = bak && !gk3w_is_systemd_boot(bak, bak_len);
+    int bak_win = bak_ok && (same_bytes(bak, bak_len, w, w_len) || gk3w_is_windows_boot_manager(bak, bak_len));
+    int cur_sd = cur && gk3w_is_systemd_boot(cur, cur_len);
+    int cur_known = !cur || cur_sd || gk3w_is_windows_boot_manager(cur, cur_len) || same_bytes(cur, cur_len, w, w_len) ||
+                    same_bytes(cur, cur_len, bak, bak_len);
+    if (!cur_known)
+        return bak ? GK3W_FB_LEAVE_OTHER : GK3W_FB_UNTOUCHED;   /* 没有备份：我们根本没动过回落路径 */
+    if (bak_ok && !bak_win)
+        return GK3W_FB_RESTORE_ORIGINAL;
+    if (bak_ok || cur_sd)
+        return w ? GK3W_FB_USE_W : bak_ok ? GK3W_FB_USE_BAK : GK3W_FB_NO_WINDOWS;
+    if (!cur && w)
+        return GK3W_FB_USE_W;   /* 回落路径不见了（例如改名替换时掉电）：放回 Windows 启动管理器 */
+    return GK3W_FB_UNTOUCHED;
+}
+
+int gk3w_fallback_bak_disposable(const uint8_t *bak, size_t bak_len, const uint8_t *w, size_t w_len)
+{
+    if (!bak)
+        return 1;
+    return gk3w_is_systemd_boot(bak, bak_len) || (w && (same_bytes(bak, bak_len, w, w_len) || gk3w_is_windows_boot_manager(bak, bak_len)));
+}
+
+gk3w_backup_action gk3w_install_backup_decide(const uint8_t *cur, size_t cur_len, const uint8_t *w, size_t w_len,
+                                              const uint8_t *bak, size_t bak_len, const uint8_t *sd, size_t sd_len)
+{
+    if (!cur)
+        return GK3W_BK_NONE;
+    if (!bak)
+        return same_bytes(cur, cur_len, sd, sd_len) ? GK3W_BK_NONE : GK3W_BK_SAVE;
+    /* 现在的就是要装的这一份（认不出标记的 systemd-boot 也算）：覆盖不丢 */
+    if (gk3w_is_systemd_boot(cur, cur_len) || same_bytes(cur, cur_len, sd, sd_len) || same_bytes(cur, cur_len, bak, bak_len) ||
+        gk3w_is_windows_boot_manager(cur, cur_len) || same_bytes(cur, cur_len, w, w_len))
+        return GK3W_BK_NONE;
+    return gk3w_fallback_bak_disposable(bak, bak_len, w, w_len) ? GK3W_BK_REPLACE : GK3W_BK_CONFLICT;
+}
+
+int gk3w_is_machine_id(const char *s)
+{
+    size_t n = 0;
+    for (; s[n]; n++)
+        if (!((s[n] >= '0' && s[n] <= '9') || (s[n] >= 'a' && s[n] <= 'f')))
+            return 0;
+    return n == 32;
+}
+
+/* 文件名与各行都是承重的：boot_control HAL 按 *-android-a.conf / *-android-b.conf 改写 loader.conf 的 default
+ * （EspSlot.cpp:41-43）；OTA postinstall 只改 options 那一行、只往 slot_<后缀>/ 写这三个文件名。
+ * ⚠️ 标题里的产品名是写死的（GK3W_EGO_TITLE，见 esp.h），换大版本时要改。 */
+int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, const char *cmdline)
+{
+    int n;
+    if ((slot != 'a' && slot != 'b') || !gk3w_is_machine_id(mid))
+        return -1;
+    n = snprintf(out, cap,
+                 "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _%c\n"
+                 "version    gaokun3-slot-%c\n"
+                 "sort-key   zandroid%c\n"
+                 "options    %s androidboot.slot_suffix=_%c\n"
+                 "linux      /%s/android/slot_%c/Image\n"
+                 "devicetree /%s/android/slot_%c/gaokun3.dtb\n"
+                 "initrd     /%s/android/slot_%c/ramdisk.img\n",
+                 slot, slot, slot, cmdline, slot, mid, slot, mid, slot, mid, slot);
+    return n < 0 || (size_t)n >= cap ? -1 : n;
+}
+
+gk3w_esp_check gk3w_esp_space_check(const gk3w_esp_space *in)
+{
+    /* 先回落路径，再 Windows 的引导管理器 */
+    if (!in->reinstall && in->esp_size_mib > 0 && in->esp_size_mib < GK3W_ESP_MIN_SIZE_MIB)
+        return GK3W_ESP_TOO_SMALL;
+    if (in->free_kib < in->need_kib)
+        return GK3W_ESP_FULL;
+    if (in->free_kib - in->need_kib + in->slot_kib <= (int64_t)GK3W_ESP_OTA_NEED_KIB)
+        return GK3W_ESP_OTA_ROOM;
+    if (in->windows &&
+        in->free_kib - in->need_kib - in->slot_kib - (int64_t)GK3W_ESP_GK3BOOT_KIB < (int64_t)GK3W_ESP_WIN_RESERVE_KIB)
+        return GK3W_ESP_WIN_RESERVE;
+    if (in->free_kib / 1024 < (int64_t)(in->reinstall ? GK3W_ESP_REINSTALL_NEED_MIB : GK3W_ESP_NEED_MIB))
+        return GK3W_ESP_FULL_MIN;
+    return GK3W_ESP_OK;
+}
+
+const char *gk3w_esp_check_code(gk3w_esp_check c)
+{
+    switch (c) {
+    case GK3W_ESP_OK: return "ok";
+    case GK3W_ESP_TOO_SMALL: return "esp-too-small";
+    case GK3W_ESP_FULL:
+    case GK3W_ESP_FULL_MIN: return "esp-full";
+    case GK3W_ESP_OTA_ROOM: return "esp-ota-room";
+    case GK3W_ESP_WIN_RESERVE: return "esp-win-reserve";
+    }
+    return "unknown";
+}

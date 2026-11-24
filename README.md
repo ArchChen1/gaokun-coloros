@@ -15,7 +15,7 @@
 | `docs/` | 架构、构建规范、事故台账、刷机与验收清单 |
 | `docs/releases/` | 历史发布说明与专项报告（v43 系列、v45） |
 | `patches/` | 具体补丁及其说明（SystemUI 充电、vendor 黑屏修复说明等） |
-| `installer/` | 安装器派生层：上游补丁（`patches/`）、发布自检工具（`tools/make_release.py`） |
+| `installer/` | 安装器：`app/` 整棵源码（Flutter Windows 应用 + C 后端）、`patches/`、`tools/make_release.py`、`UPSTREAM.md` |
 | `tools/` | 辅助工具：`otatools/bin/lpmake`、依赖闭包求解、设备端探针脚本 |
 | `releases/` | 出包产物（不入库） |
 | `work/` | 抓包、截图、临时数据（不入库，只保留 `manifest.json` 快照） |
@@ -23,7 +23,7 @@
 ## 快速开始
 
 ```powershell
-git clone --recurse-submodules https://github.com/ArchChen1/gaokun-coloros.git
+git clone https://github.com/ArchChen1/gaokun-coloros.git
 cd gaokun-coloros
 .\build.ps1 -Target doctor              # 环境自检
 .\build.ps1 -Target deps                # WSL 侧依赖
