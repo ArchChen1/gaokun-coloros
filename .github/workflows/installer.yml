@@ -1,0 +1,118 @@
+name: installer
+
+# 安装器编译验证：后端在 Linux 交叉编，应用在 Windows 编 Flutter。
+# 与上游 ego-installer-x64 流水线等价，但源码来自本仓库内置的 vendor/gaokun-android。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'vendor/gaokun-android/**'
+      - 'build.ps1'
+      - '.github/workflows/installer.yml'
+  pull_request:
+    paths:
+      - 'vendor/gaokun-android/**'
+      - '.github/workflows/installer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: '3.47.2'
+  LLVM_MINGW_NAME: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
+  LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
+  GK3: vendor/gaokun-android
+
+jobs:
+  backend:
+    name: backend (x64)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装依赖
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq clang make python3 zstd e2fsprogs
+
+      - name: llvm-mingw
+        run: |
+          curl -fsSL --retry 3 -o /tmp/llm.tar.xz \
+            "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/${LLVM_MINGW_NAME}.tar.xz"
+          echo "${LLVM_MINGW_SHA256}  /tmp/llm.tar.xz" | sha256sum -c
+          mkdir -p "$HOME/opt" && tar -C "$HOME/opt" -xf /tmp/llm.tar.xz
+          echo "LLVM_MINGW=$HOME/opt/${LLVM_MINGW_NAME}" >> "$GITHUB_ENV"
+
+      - name: 主机单测
+        working-directory: ${{ env.GK3 }}
+        run: make -C installer/backend test
+
+      - name: 交叉编 gk3w + sdboot
+        working-directory: ${{ env.GK3 }}
+        run: make -C installer/backend win-x64 sdboot "GK3W_VERSION=dev-${GITHUB_SHA::7}"
+
+      - name: 编 mke2fs
+        working-directory: ${{ env.GK3 }}
+        run: bash installer/backend/mke2fs/build.sh x64
+
+      - name: 产物校验
+        working-directory: ${{ env.GK3 }}
+        run: |
+          ls -l installer/backend/build/x64/gk3w.exe
+          ls -l installer/backend/build/mke2fs-x64/mke2fs.exe
+          ls -l installer/backend/build/sdboot/systemd-bootaa64.efi
+          file installer/backend/build/x64/gk3w.exe | tee /dev/stderr | grep -qi 'PE32+'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-x64
+          if-no-files-found: error
+          path: |
+            vendor/gaokun-android/installer/backend/build/x64/gk3w.exe
+            vendor/gaokun-android/installer/backend/build/mke2fs-x64/mke2fs.exe
+            vendor/gaokun-android/installer/backend/build/mke2fs-x64/mke2fs.conf
+            vendor/gaokun-android/installer/backend/build/sdboot/systemd-bootaa64.efi
+
+  app:
+    name: app (x64)
+    needs: backend
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-x64
+          path: vendor/gaokun-android/installer/backend/build
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: 字体
+        run: python vendor/gaokun-android/installer/common/tool/fetch-fonts.py
+
+      - name: 编应用
+        shell: pwsh
+        working-directory: vendor/gaokun-android/installer/windows
+        run: |
+          flutter --disable-analytics
+          flutter config --enable-windows-desktop
+          flutter pub get
+          flutter build windows --release --dart-define=GK3_VERSION=dev-$($env:GITHUB_SHA.Substring(0,7))
+
+      - name: 产物校验
+        shell: pwsh
+        run: |
+          $rel = "vendor/gaokun-android/installer/windows/build/windows/x64/runner/Release"
+          $need = @('gk3_windows.exe','backend/gk3w.exe','backend/mke2fs.exe','backend/mke2fs.conf','backend/systemd-bootaa64.efi')
+          foreach ($f in $need) { if (-not (Test-Path "$rel/$f")) { throw "missing $rel/$f" } }
+          "$rel OK" | Write-Host
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows-x64
+          if-no-files-found: error
+          path: vendor/gaokun-android/installer/windows/build/windows/x64/runner/Release

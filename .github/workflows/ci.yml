@@ -1,0 +1,57 @@
+name: ci
+
+# 轻量校验：脚本语法、Python 语法、后端主机单测、发布工具自检。
+# 系统镜像那条线需要 8 GB 输入，不在 CI 里跑（见 docs/BUILD-FROM-SCRATCH.md）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    name: shell 语法
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            if head -1 "$f" | grep -q 'bash'; then
+              bash -n "$f" || { echo "语法错误: $f"; fail=1; }
+            fi
+          done < <(git ls-files '*.sh')
+          exit $fail
+
+  python:
+    name: python 语法
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 -m py_compile $(git ls-files '*.py')
+
+  backend:
+    name: 安装器后端单测
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq clang make zstd e2fsprogs
+      - name: make test
+        working-directory: vendor/gaokun-android
+        run: make -C installer/backend test
+
+  release-tool:
+    name: 发布工具自检
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -c "import ast,sys; ast.parse(open('installer/tools/make_release.py').read())"
+      - name: inputs 清单格式
+        run: |
+          awk '!/^#/ && NF && NF!=4 {print "坏行: " NR ": " $0; bad=1} END{exit bad}' inputs/manifest.txt
