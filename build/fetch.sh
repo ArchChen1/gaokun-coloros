@@ -50,6 +50,7 @@ done_already() {  # <target> <sha>
 
 fetch_part() {  # <asset> <sha> → $PART_DIR/<asset>
   local asset=$1 want=$2 dst="$PART_DIR/$1"
+  mkdir -p "$PART_DIR"
   if [ -s "$dst" ] && [ "$(sha_of "$dst")" = "$want" ]; then return 0; fi
   echo "    <- $asset"
   curl -fL --retry 3 --retry-delay 2 -C - -o "$dst.part" "$BASE/$asset" || { rm -f "$dst.part"; return 1; }
@@ -114,7 +115,6 @@ while read -r tsha tbytes target; do
     mv -f "$asm" "$(dst_of "$target")"
   fi
   rm -f "${parts[@]/#/$PART_DIR/}"
-  rmdir "$PART_DIR" 2>/dev/null || true
   ok=$((ok+1))
 done < "$TARGETS"
 
