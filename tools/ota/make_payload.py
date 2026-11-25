@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "proto"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import update_metadata_pb2 as um  # noqa: E402
 
 BLOCK = 4096
@@ -123,7 +124,9 @@ def sign_digest(digest, key_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parts", required=True, help="分区镜像目录")
+    ap.add_argument("--parts", default="", help="分区镜像目录（调试用；正式出包请用 --manifest）")
+    ap.add_argument("--manifest", default="",
+                    help="manifest.json 账本：按其中的 path+bytes+sha256 取 13 个分区，任一不符即退出")
     ap.add_argument("--key", required=True, help="RSA 私钥 PEM（对应 otacerts.zip 里的证书）")
     ap.add_argument("--out", required=True)
     ap.add_argument("--version", default="")
@@ -138,13 +141,40 @@ def main():
 
     wanted = {s.strip() for s in a.only.split(",") if s.strip()} if a.only else None
     entries = []
-    for name, fname in PARTS:
-        if wanted and name not in wanted:
-            continue
-        path = os.path.join(a.parts, fname)
-        if not os.path.isfile(path):
-            raise SystemExit(f"缺镜像: {path}")
-        entries.append((name, path, os.path.getsize(path)))
+    if a.manifest:
+        # 唯一正式来源：账本。任何 sha / 大小不符都直接停 —— 这就是「补丁不能悄悄丢」的那道闸。
+        import parts_manifest as pm
+        man = json.load(open(a.manifest, encoding="utf-8"))
+        pm_parts = man.get("parts", {})
+        for name, fname in PARTS:
+            if wanted and name not in wanted:
+                continue
+            p = pm_parts.get(name)
+            if not p:
+                raise SystemExit(f"账本里没有 {name}（{a.manifest}）")
+            path = p["path"]
+            if not os.path.isfile(path):
+                raise SystemExit(f"账本记录的产物不存在：{name} -> {path}")
+            size = os.path.getsize(path)
+            if p.get("bytes") and size != p["bytes"]:
+                raise SystemExit(f"{name} 大小与账本不符：{size} != {p['bytes']}（{path}）")
+            got = pm.sha256(path)
+            if got != p.get("sha256"):
+                raise SystemExit(f"{name} sha 与账本不符：{got[:16]}… != {str(p.get('sha256'))[:16]}…"
+                                 f"（补丁丢了？{path}）")
+            entries.append((name, path, size))
+        print(f"来源=账本 {a.manifest}（generated={man.get('generated', '?')}，{len(entries)} 个分区已核对）")
+    elif a.parts:
+        print("!! 警告：--parts 目录模式绕过账本校验，只用于调试；正式出包请用 --manifest")
+        for name, fname in PARTS:
+            if wanted and name not in wanted:
+                continue
+            path = os.path.join(a.parts, fname)
+            if not os.path.isfile(path):
+                raise SystemExit(f"缺镜像: {path}")
+            entries.append((name, path, os.path.getsize(path)))
+    else:
+        raise SystemExit("必须给 --manifest（正式）或 --parts（调试）")
 
     manifest, data_size = build_manifest(entries)
 

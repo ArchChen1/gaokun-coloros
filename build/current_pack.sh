@@ -12,12 +12,32 @@ echo '== 出包前断言（必跑）'
 bash "$SCRIPT_DIR/current_verify.sh" || { echo 'PACK_ABORTED: verify failed'; exit 1; }
 
 python3 - "$GK3_STATE" "$SUPER_DIR" "$ZB" "$GK3_OTATOOLS" <<'PY'
-import json, os, subprocess, sys
+import json, os, subprocess, sys, hashlib
 state, outdir, zb, OT = sys.argv[1:5]
 man = json.load(open(os.path.join(state, 'manifest.json')))
 ver = man.get('version', 'dev')
 names = ['system', 'system_ext', 'product', 'vendor', 'odm', 'my_product', 'my_stock',
          'my_manifest', 'my_region', 'my_engineering', 'my_heytap', 'my_carrier', 'my_bigball']
+
+def sha256(p):
+    h = hashlib.sha256()
+    with open(p, 'rb') as f:
+        for c in iter(lambda: f.read(8 << 20), b''):
+            h.update(c)
+    return h.hexdigest()
+
+# 账本自证：path 指向的文件必须还是账本记的那份（vendor 退回未打补丁、system 用回基座，
+# 这类事故都在这里被挡住，不再靠人记）
+for n in names:
+    p = man['parts'][n]
+    if not os.path.isfile(p['path']):
+        raise SystemExit(f'PART_MISSING: {n} -> {p["path"]}')
+    if os.path.getsize(p['path']) != p['bytes']:
+        raise SystemExit(f'PART_SIZE_MISMATCH: {n}')
+    got = sha256(p['path'])
+    if got != p['sha256']:
+        raise SystemExit(f'PART_SHA_MISMATCH: {n} {got[:16]}… != {p["sha256"][:16]}… (补丁丢了？)')
+print('manifest 自证通过：13/13 与账本一致')
 lim = 21473689088
 F = [man['parts'][n]['path'] for n in names]
 total = sum(os.path.getsize(f) for f in F)

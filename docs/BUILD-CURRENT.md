@@ -55,7 +55,53 @@ rc 无同步 `write …ath11k_pci/bind`、有非阻塞兜底 / `v29_usb_capture.
 |---|---|---|
 | v53 | 亮黑屏，与 v48–v50 同症状 | vendor 误用 `v50`，丢失 turnip `queueCount` 两字节补丁与 `skiavk` |
 
+## 2026-11-26：设备实证基线（A/B 两槽同源）
+
+这一轮 OTA 试验把「设备上真能启动的那套」dump 下来做了账本，13 个分区的 sha 如下
+（`tools/ota/parts_manifest.py write --parts <dump目录>` 生成的 `work/manifest_fromB.json`）：
+
+| 分区 | 字节 | sha256（前 16） | 账本里原来的值 |
+|---|---|---|---|
+| system | 1,137,397,760 | `4011db1d57993077` | `f8770b1c…` ← **旧账本记的是未打补丁的基座** |
+| system_ext | 986,378,240 | `6f2e5102c5b0d3f3` | 同 |
+| product | 167,698,432 | `6750e8e32c064b8d` | 同 |
+| vendor | 536,870,912 | `dd574c1756496e2f` | `5a5853c5…` ← **旧账本记的是 C2 补丁前** |
+| odm | 2,131,279,872 | `5f014b79a4e68ee9` | 同 |
+| my_product | 1,063,944,192 | `cd445c2673253734` | 同（v52 层） |
+| my_stock | 4,026,658,816 | `17a19bda72fe5d3a` | 同（v52 层） |
+| my_manifest | 716,800 | `eb2c3ebdf42a36ab` | 同 |
+| my_region | 7,237,632 | `5783ff83d3640b64` | 同 |
+| my_engineering | 335,872 | `ce71e4b632eac3f6` | `f38ccd36…` ← **证书版产物从未落盘** |
+| my_heytap | 335,872 | `083e1ebbbdb9866b` | 同 |
+| my_carrier | 335,872 | `61171f0c977eafc0` | 同 |
+| my_bigball | 335,872 | `d5fc02100b528046` | 同 |
+
+结论：旧 `current/manifest.json`（2026-11-24 06:18）在 system / vendor / my_engineering 三处已经**过期**。
+它记的 sha 与设备上真跑的那份不一致，而这个账本从来没有人核对过 —— 这就是「补丁老是丢」的结构性原因。
+
+## 硬约束（2026-11-26 起生效）
+
+1. **账本自证。** `build/current_pack.sh` 与 `tools/ota/make_payload.py --manifest` 都会逐分区核对
+   `bytes` + `sha256`，任一不符直接 `PART_SHA_MISMATCH` / 退出。出包、出 payload、发布，
+   都只认账本，不再接受「目录里正好有这几个文件」。
+2. **补丁产物必须落盘在基座目录。** `current/parts/`（或 `builds/<版本>/`）之外不许有产物；
+   `work/`、`/mnt/e/.../work/` 一律视为临时目录，不许当来源。
+   （本轮 system 的补丁版只在 `work/system_patched.erofs`，my_engineering 的证书版干脆没落盘 —— 两处都要补齐。）
+3. **`vNN` 不是版本号。** v52 只有 `my_product` / `my_stock` / `vendor` 三个分区，它是**补丁层**，不是「v52 全套」。
+   说「用 v52」既对（vendor 要从这一层派生）又错（其余分区根本不在那儿）。版本只有 `manifest.json` 一个说法。
+4. **改分区 = 改账本。** 任何对分区的改动，必须同时更新 `manifest.json`（新 sha）并在
+   `docs/BUILD-CURRENT.md` 事故台账里记一行「改了什么、为什么」。
+
+## 待补齐的产物（当前缺口）
+
+- `my_engineering` 的证书版（`ce71e4b6…`）：设备上有，产物没有。需要一条 `build/patches/*.sh`
+  从 `v49/src/my_engineering_a.img` 派生并校验，否则发布包会把 OPPO 原证书带出去。
+- vendor 的 C2 补丁（`dd574c17…`）：只有产物，没有可复跑的脚本（`v52/ca5ba84b…` → C2 这一段）。
+- system 的补丁版（`4011db1d…`）：由 `build/rebuild_system_patched.sh` 从 v50 树重打，产物应固定落到
+  `current/parts/system.erofs`，而不是 `work/`。
+
+
 ## 最新出包（current）
 
-见 `manifest.json` 与 `latest/super.img.sha256.txt`；当前值：
+见 `manifest.json` 与 `latest/super.img.sha256.txt`；当前值（2026-11-24 那次的 `super.img`，已被上面的基线取代，仅供追溯）：
 sha256 `a3d0d0f3508d21f98e4c679b84132987798c08d22fbc6e633559b8025dae6b0b`，9,833,219,624 B。

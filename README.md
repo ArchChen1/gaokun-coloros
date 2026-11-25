@@ -52,11 +52,27 @@ sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pa
 5. **sha256 三处一致**：`manifest.json`、`latest/super.img.sha256.txt`、汇报里。
 6. 超过 5 分钟的构建先报批准。
 
-## 当前状态（2026-11-24）
+### 补丁不许再丢（2026-11-26 追加，已落到脚本里）
 
-- 已在真机跑通的镜像：进桌面正常、控制中心/侧边栏尺寸一致（密度 320 由 rc 的属性触发维持，不再需要外部脚本）。
-- 开机：`boot_progress_start` 16.8 s、`enable_screen` 46.7 s（此前 78.7 s / 104.8 s，ath11k 固件时序问题已修）。
-- 未完成：充电图标 —— `oplus_charger_hal_service` 仍缺两个库（`android.hardware.sensors-V3-ndk.so`、`libhidltransport.so`），需进 `odm/lib64`。
-- 未开始：系统更新入口（`Cota`/OTA 相关 APK 在 v43 精简时被删）、OTA 整包、正式发版形态（`super.img.zst` + `boot.img` + sha + 全量 OTA）。
+7. **账本自证**：`current_pack.sh` 与 `tools/ota/make_payload.py --manifest` 都会逐分区核对
+   `bytes` + `sha256`，不符就 `PART_SHA_MISMATCH` 退出。出包/出 payload/发布都只认账本。
+8. **payload 只吃账本**：`make_payload.py` 必须给 `--manifest`；`--parts` 目录模式仅供调试，会打警告。
+9. **产物位置**：分区产物的唯一合法位置是 `current/parts/`（或 `builds/<版本>/`）。`work/` 是临时目录，
+   永远不能当来源——本轮 system 补丁版就只躺在 `work/` 里，my_engineering 的证书版甚至没落盘。
+10. **`vNN` 不是版本号**：`v52` 只有 `my_product` / `my_stock` / `vendor` 三个分区，它是**补丁层**不是「全套」；
+    版本只有一个说法，就是 `manifest.json`。
+11. **改分区 = 改账本**：动过哪个分区，就更新 `manifest.json` 的 sha，并在 `docs/BUILD-CURRENT.md` 事故台账记一行。
+
+## 当前状态（2026-11-26）
+
+- 真机：super 已改为 **legacy A/B 双槽实体分区**（20 GiB 里 A 10,059,526,144 B + B 同尺寸），
+  `boot_a`/`boot_b` 重打成同一个内核（`selinux=permissive`），两槽都能独立启动。
+- **OTA 端到端已打通**：自签 payload（9.37 GiB，13 分区）→ `update_engine` 下载/验签 → 写目标槽 →
+  重建元数据 → 改 BCAB 切槽 → 重启进新槽 → `markBootSuccessful`（`tries 6→1`）。
+  legacy A/B 没有 `--merge`（那是 VABC 的）。
+- 发布清理已做（撤 `gk3run` root runner、`gk3clean`、`/metadata` 转储钩子、`ro.virtual_ab.*`、`snapuserd -ublk`），
+  **镜像尚未刷上机**（要等 OTA 收尾一起刷，否则会丢掉设备侧 root 调试通道）。
+- 引导项已改名：gk3boot 两条 = `ColorOS 17 - slot A/B`，直连两条 = `Direct boot (rescue) - slot _a/_b`。
+- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、`my_engineering` 证书版产物、vendor C2 补丁脚本化。
 
 详见 `docs/ARCHITECTURE.md`、`docs/BUILD-CURRENT.md`、`docs/INCIDENTS.md`。
