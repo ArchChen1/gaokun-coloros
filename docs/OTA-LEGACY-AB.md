@@ -346,3 +346,48 @@ options 里直接写 `androidboot.slot_suffix=_a`，从 ESP 的 `slot_a/Image` �
 |---|---|---|---|
 | B | 发布版 system `185b4991…`（无 root 通道、无 VABC 属性、无 logdump） | 日常/发布 | 默认（BCAB 实体化后 b pri15 ok1） |
 | A | 调试版 system `4011db1d…`（`gk3run` 在、VABC 属性在） | root 调试通道 | gk3boot 菜单 `Direct boot (rescue) - slot _a` |
+
+## 第五次：给 payload 加分块 / 全零 / 压缩 — 2026-11-26
+
+原来每个分区只有一个 `REPLACE` op、`data_length` 就是整份镜像，等于把 9.36 GiB 原样塞进包。
+现在 `make_payload.py` 把分区切成固定大小的块（默认 4 MiB），每块单独决定 op 类型：
+
+| op | 什么时候用 | 说明 |
+|---|---|---|
+| `ZERO` | 整块全零 | 不带数据，引擎直接写零。`vendor.img` 有 41.9% 是全零 |
+| `REPLACE` | 不压缩（测试） | 数据即块的原文，`data_offset` 指向镜像切片 |
+| `REPLACE_XZ` / `REPLACE_BZ` | 发布 | 块先压缩，`data_length` 是**压缩后**长度 |
+
+用法：
+
+```
+# 测试（最快：只做全零块，不压）
+make_payload.py --manifest ... --compress none
+# 发布（体积优先）
+make_payload.py --manifest ... --compress xz --level 6 --jobs 8
+# 完全不切块的老行为（对照用）
+make_payload.py --manifest ... --compress none --no-zero
+```
+
+几处必须记住的语义：
+
+- `data_sha256_hash` 算的是**数据区里实际存的那段字节**（压缩块就是压缩后的字节），
+  不是解压后的原文；整份原文的哈希在 `new_partition_info.hash` 里，引擎装完会整体校验。
+- `ZERO` op 不能带 `data_offset/data_length/data_sha256_hash`，带了引擎的 `ValidateOperationHash`
+  会直接 CHECK 失败。
+- 压缩块落在临时 spool 文件（`--spool` 可指定），因为 manifest 必须写在数据前面，
+  而 `data_offset` 要等压缩完才知道长度 —— 两步走，spool 用完即删。
+- xz/bz2 用 `--jobs` 起多进程；Python 的 `lzma` 单线程，9.36 GiB 一份 `-6` 单线程约一小时，`-T8` 约八分钟。
+
+实测（`system.erofs` 64 MB 切片，见上文「压缩议题」）：xz -9 → 0.61、xz -6 → 0.665、
+zstd -22 --long → 0.642。引擎的 `strings` 里确实有 `REPLACE_ZSTD`，但体积上 xz 更强，
+zstd 的优势只在解码速度 —— 所以生成器先只做 xz / bz2 两档。
+
+配套自检：`tools/ota/verify_payload.py --payload ...` 会在本机把包解回来重拼分区，
+校验 header/签名长度/数据连续性/每个 op 的 `data_sha256_hash`/extents 无空洞/整份 sha，
+最后打印各 op 类型计数和压缩比 —— 不上设备就能确认"结构没写错"。
+（当前只在合成的 3 分区样例上跑通：`PAYLOAD_VERIFY_PASSED`，xz/bz2/ZERO/不压缩四种形态都过。）
+
+**尚未验证的一步**：压缩包的 `data_sha256_hash` 语义只有真机装了才知道 —— AOSP 这边按
+"所读 blob 的哈希"实现，本地自检也是这个口径，但引擎的实际行为要在设备上装一次才能钉死。
+

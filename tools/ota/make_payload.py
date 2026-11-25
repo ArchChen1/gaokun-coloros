@@ -14,11 +14,16 @@
 """
 import argparse
 import base64
+import bz2
+import functools
 import hashlib
 import json
+import lzma
 import os
 import struct
 import sys
+import tempfile
+from concurrent.futures import ProcessPoolExecutor
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, utils
@@ -42,37 +47,113 @@ PARTS = [
 
 DYNAMIC_GROUP = "gaokun3_dynamic_partitions"
 SNAPSHOT = False  # --snapshot 打开时走 VABC 快照
+CHUNK = 4 << 20    # 单个 InstallOperation 覆盖的原始字节数
+COMPRESS = "none"  # none / xz / bz2
+LEVEL = 3
+ZERO = True
 
 
-def build_manifest(parts, block_size=BLOCK):
-    """parts: [(name, path, bytes)]，按顺序生成 install_operations。"""
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as src:
+        for buf in iter(lambda: src.read(8 << 20), b""):
+            h.update(buf)
+    return h.digest()
+
+
+def _iter_chunks(path, chunk):
+    pos = 0
+    with open(path, "rb") as f:
+        while True:
+            buf = f.read(chunk)
+            if not buf:
+                break
+            yield pos, buf
+            pos += len(buf)
+
+
+def _compress_one(algo, level, item):
+    pos, buf = item
+    if algo == "xz":
+        return pos, len(buf), lzma.compress(buf, format=lzma.FORMAT_XZ, preset=level)
+    if algo == "bz2":
+        return pos, len(buf), bz2.compress(buf, compresslevel=level)
+    return pos, len(buf), buf
+
+
+def build_manifest(entries, spool_f=None, pool=None, block_size=BLOCK):
+    """entries: [(name, path, bytes)]，返回 (manifest, data_size, plan)。
+
+    plan 按数据区顺序记录每个 op 的数据来源，写 payload 时照抄即可：
+      ("file", path, off, length) —— 未压缩，直接从镜像切片
+      ("spool", off, length)      —— 压缩后的块，落在临时文件里
+    """
     m = um.DeltaArchiveManifest()
     m.block_size = block_size
     m.minor_version = 0
     data_offset = 0
-    for name, path, size in parts:
+    plan = []
+    for name, path, size in entries:
         if size % block_size:
             raise SystemExit(f"{name} 大小不是 {block_size} 的整数倍: {size}")
         pu = m.partitions.add()
         pu.partition_name = name
-        op = pu.operations.add()
-        op.type = um.InstallOperation.REPLACE
-        ext = op.dst_extents.add()
-        ext.start_block = 0          # 分区内相对块号
-        ext.num_blocks = size // block_size
-        op.data_offset = data_offset
-        op.data_length = size
-        data_offset += size
-        # 全量 REPLACE 的 data 就是整份镜像，哈希必须给（hash_checks_mandatory）
-        h = hashlib.sha256()
-        with open(path, "rb") as src:
-            for chunk in iter(lambda: src.read(8 << 20), b""):
-                h.update(chunk)
-        digest = h.digest()
-        op.data_sha256_hash = digest
+
+        def flush(items):
+            nonlocal data_offset
+            for kind, pos, nbytes, blob, digest in items:
+                op = pu.operations.add()
+                op.type = kind
+                ext = op.dst_extents.add()
+                ext.start_block = pos // block_size
+                ext.num_blocks = nbytes // block_size
+                if blob is not None:
+                    op.data_offset = data_offset
+                    op.data_length = blob[3] if blob[0] == "file" else blob[2]
+                    op.data_sha256_hash = digest
+                    data_offset += op.data_length
+                plan.append(blob)
+
+        if COMPRESS == "none" and not ZERO:
+            # 快速路径：整份一个 REPLACE，只读一遍算哈希
+            digest = _sha256_file(path)
+            flush([(um.InstallOperation.REPLACE, 0, size,
+                    ("file", path, 0, size), digest)])
+            part_hash = digest
+        else:
+            if COMPRESS != "none":
+                part_hash = _sha256_file(path)  # 压缩块里拿不到原始字节，先单独算整份哈希
+            it = _iter_chunks(path, CHUNK)
+            if COMPRESS != "none":
+                if pool is not None:
+                    it = pool.map(functools.partial(_compress_one, COMPRESS, LEVEL), it)
+                else:
+                    it = (_compress_one(COMPRESS, LEVEL, x) for x in it)
+            else:
+                hpart = hashlib.sha256()
+            for item in it:
+                if COMPRESS == "none":
+                    pos, buf = item
+                    hpart.update(buf)
+                    nbytes = len(buf)
+                    if ZERO and not buf.strip(b"\0"):
+                        flush([(um.InstallOperation.ZERO, pos, nbytes, None, None)])
+                        continue
+                    flush([(um.InstallOperation.REPLACE, pos, nbytes,
+                            ("file", path, pos, nbytes), hashlib.sha256(buf).digest())])
+                else:
+                    pos, nbytes, cbuf = item
+                    spool_f.write(cbuf)
+                    flush([(um.InstallOperation.REPLACE_XZ if COMPRESS == "xz"
+                            else um.InstallOperation.REPLACE_BZ,
+                            pos, nbytes, ("spool", spool_f.tell() - len(cbuf), len(cbuf)),
+                            hashlib.sha256(cbuf).digest())])
+            if COMPRESS == "none":
+                part_hash = hpart.digest()
+
         info = pu.new_partition_info
         info.size = size
-        info.hash = digest
+        info.hash = part_hash
         if SNAPSHOT:
             # VABC 要按分区预留 COW 空间；全量 REPLACE 等于整份都要抄一遍
             pu.estimate_cow_size = size + (1 << 20)
@@ -91,10 +172,10 @@ def build_manifest(parts, block_size=BLOCK):
             dpm.compression_factor = 4096  # 0 会被 cow writer 判为非法
     group = dpm.groups.add()
     group.name = DYNAMIC_GROUP
-    group.size = sum(size for _, _, size in parts)
-    for name, _, _ in parts:
+    group.size = sum(size for _, _, size in entries)
+    for name, _, _ in entries:
         group.partition_names.append(name)
-    return m, data_offset
+    return m, data_offset, plan
 
 
 def _wrap(raw):
@@ -134,10 +215,23 @@ def main():
     ap.add_argument("--snapshot", action="store_true", help="走 VABC 快照（默认直接写当前槽）")
     ap.add_argument("--group", default="",
                     help="dynamic_partition_metadata 里的组名；VABC 必须与设备 lpdump 里的组名逐字相同（带槽后缀）")
+    ap.add_argument("--compress", default="none", choices=["none", "xz", "bz2"],
+                    help="块压缩方式：none（测试用，最快）/ xz（发布，体积最优）/ bz2")
+    ap.add_argument("--level", type=int, default=3, help="压缩等级：xz 0-9，bz2 1-9")
+    ap.add_argument("--chunk", type=int, default=4, help="每个 op 覆盖的原始 MB（要 4096 对齐，默认 4）")
+    ap.add_argument("--no-zero", action="store_true", help="不把全零块写成 ZERO")
+    ap.add_argument("--jobs", type=int, default=0, help="压缩并行进程数（0 = CPU 数）")
+    ap.add_argument("--spool", default="", help="压缩块临时文件路径（默认系统临时目录）")
     a = ap.parse_args()
-    global SNAPSHOT, DYNAMIC_GROUP
+    global SNAPSHOT, DYNAMIC_GROUP, COMPRESS, LEVEL, ZERO, CHUNK
     SNAPSHOT = a.snapshot
     DYNAMIC_GROUP = a.group or DYNAMIC_GROUP
+    COMPRESS = a.compress
+    LEVEL = a.level
+    ZERO = not a.no_zero
+    CHUNK = a.chunk << 20
+    if CHUNK % BLOCK:
+        raise SystemExit(f"--chunk {a.chunk} MB 不是 {BLOCK} 字节的整数倍")
 
     wanted = {s.strip() for s in a.only.split(",") if s.strip()} if a.only else None
     entries = []
@@ -176,7 +270,21 @@ def main():
     else:
         raise SystemExit("必须给 --manifest（正式）或 --parts（调试）")
 
-    manifest, data_size = build_manifest(entries)
+    spool_f = None
+    pool = None
+    if COMPRESS != "none":
+        spool_path = a.spool or os.path.join(tempfile.gettempdir(), "ota_spool.bin")
+        spool_f = open(spool_path, "w+b")
+        if a.jobs != 1:
+            pool = ProcessPoolExecutor(max_workers=a.jobs or os.cpu_count() or 1)
+    try:
+        manifest, data_size, plan = build_manifest(entries, spool_f=spool_f, pool=pool)
+    finally:
+        if pool is not None:
+            pool.shutdown()
+    print(f"压缩={COMPRESS}(level={LEVEL}) 零块={ZERO} 块大小={CHUNK>>20}MB "
+          f"数据区={data_size/(1<<30):.2f}GiB ops={len(plan)}")
+
 
     # 三段式签名（AOSP 全量包的标准形态）：
     #   [header][manifest][metadata 签名][分区数据][payload 签名 blob]
@@ -210,16 +318,36 @@ def main():
         f.write(signature)
         # AOSP 的 payload 签名哈希跳过 metadata 签名本身：hash = sha256(manifest + 数据)
         h.update(metadata)
-        for name, path, size in entries:
-            with open(path, "rb") as src:
-                left = size
-                while left:
-                    buf = src.read(min(8 << 20, left))
-                    if not buf:
-                        raise SystemExit(f"{name} 读取提前结束")
-                    f.write(buf)
-                    h.update(buf)
-                    left -= len(buf)
+        cur_path = None
+        cur_src = None
+        for blob in plan:
+            if blob is None:            # ZERO 块没有数据
+                continue
+            if blob[0] == "file":
+                _, path, off, length = blob
+                if path != cur_path:
+                    if cur_src:
+                        cur_src.close()
+                    cur_src = open(path, "rb")
+                    cur_path = path
+                cur_src.seek(off)
+                src = cur_src
+            else:
+                _, off, length = blob
+                spool_f.seek(off)
+                src = spool_f
+            left = length
+            while left:
+                buf = src.read(min(8 << 20, left))
+                if not buf:
+                    raise SystemExit(f"数据块读取提前结束：{blob}")
+                f.write(buf)
+                h.update(buf)
+                left -= len(buf)
+        if cur_src:
+            cur_src.close()
+        if spool_f is not None:
+            spool_f.close()
         f.write(sign_digest(h.digest(), a.key))
 
     file_size = os.path.getsize(a.out)
