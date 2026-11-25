@@ -107,15 +107,18 @@ try {
             $off += $len
         }
         $ifs.Close(); $fs.Flush()
-        # 回读校验：按块比对，避免整段读进内存（1 GiB 级镜像会吃掉 2 GB 托管内存）
-        $ifs2 = [System.IO.File]::OpenRead($src)
+        # Verify by readback in 1 MB chunks (never load the whole extent into memory:
+        # a 1 GiB extent would cost 2 GB of managed memory). Keep the ctor on a single
+        # line: Windows PowerShell 5.1 rejects a line break inside ::new( ... ).
+        $ifs2 = [System.IO.FileStream]::new($src, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read, 1048576)
+        if ($null -eq $ifs2) { throw "cannot reopen image for readback: $src" }
         $off = [UInt64]0
         $bad = 0
         while ($off -lt $Bytes) {
             $len = [Math]::Min([UInt64]$Chunk, $Bytes - $off)
-            $a = Read-At $fs ($abs + $off) $len
-            $b = New-Object byte[] $len
-            $n = $ifs2.Read($b, 0, $len)
+            $a = Read-At $fs ($abs + $off) ([int]$len)
+            $b = New-Object byte[] ([int]$len)
+            $n = $ifs2.Read($b, 0, [int]$len)
             if ($n -ne $len) { throw "short read at $off" }
             for ($i = 0; $i -lt $len; $i++) { if ($a[$i] -ne $b[$i]) { $bad++ } }
             $off += $len

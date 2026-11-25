@@ -52,6 +52,13 @@ kInstallDeviceOpenError (7)
 - 基座 `system.erofs` 的 UUID 是 `383ec563-55d9-48b8-bf8b-5dea81dc2a3b`（早期未固定 UUID 的产物）；`build/current_build.sh` 现在固定为 `4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f601`。UUID 不参与挂载（系统盘按 dm 设备路径挂），重打按流水线的固定值走。
 - 候选镜像 `work/system_patched.erofs`：1,137,397,760 B（= `system_a` 分区长度），sha256 `80934a5fdebed67cd3099cb37f4b5ecc07e1781449ed7d07f179353c97459985`。
 
+## 写回工具的两个坑（Windows PowerShell 5.1）
+
+- 平板上跑的是 Windows PowerShell 5.1，脚本按 ANSI 解析：**给 `.ps1` 加中文注释会随机把后面的语句搞坏**（本次表现为 `$ifs2` 静默变 null）。给 Windows 侧脚本写注释一律用 ASCII，或者存成带 BOM 的 UTF-8。
+- 5.1 不接受在 `::new( ... )` 的参数列表里换行，构造语句要写在单行。
+- 整段回读校验必须分块（本次改成 1 MB 一块逐块比对），否则 1 GiB 级 extent 要吃掉 2 GB 托管内存。
+- 独立只读校验：`tools/extent_verify.ps1 -Sector <n> -Bytes <len>`，只算 sha 不动盘，写完再对一次最省心。
+
 ## 待验证
 
 写回后重跑 `region_snap.bin` 小快照包，确认能过 `kInstallDeviceOpenError (7)`，进入真正的快照创建/写入阶段。
