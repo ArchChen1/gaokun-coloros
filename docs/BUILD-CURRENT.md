@@ -79,6 +79,16 @@ rc 无同步 `write …ath11k_pci/bind`、有非阻塞兜底 / `v29_usb_capture.
 结论：旧 `current/manifest.json`（2026-11-24 06:18）在 system / vendor / my_engineering 三处已经**过期**。
 它记的 sha 与设备上真跑的那份不一致，而这个账本从来没有人核对过 —— 这就是「补丁老是丢」的结构性原因。
 
+### 2026-11-26 03:55：账本已切到「发布清理版」
+
+上面这张表是**调试版**基线（带 `gk3run` / `gk3clean` / `/metadata` 转储钩子 / `ro.virtual_ab.*` / `snapuserd -ublk`）。
+发布清理后的 system 重打为 `185b4991…`（1,137,397,760 B，`current/parts/release/system.erofs`），
+已用 13 分区全量 payload 从 A 槽 OTA 到 B 槽并开机验证（`slot_suffix=_b`、`boot_completed=1`）。
+主账本 `manifest.json` 的 system 现在就是 `185b4991…`，其余 12 个分区不变。
+
+注意两槽现在**故意不同源**：B = 发布版，A = 调试版（保留 `gk3run` 当 root 回退通道）。
+从 A 槽引导可由 gk3boot 的 `ColorOS 17 - slot A` 条目完成，不需要改 BCAB。
+
 ## 硬约束（2026-11-26 起生效）
 
 1. **账本自证。** `build/current_pack.sh` 与 `tools/ota/make_payload.py --manifest` 都会逐分区核对
@@ -100,8 +110,9 @@ rc 无同步 `write …ath11k_pci/bind`、有非阻塞兜底 / `v29_usb_capture.
 - **已补**：vendor C2 补丁 → `build/patches/p_vendor_c2.sh`。全部改动只有一处：
   `etc/init/android.hardware.media.c2-service-v4l2.rc` 里 `disabled` → `interface aidl android.hardware.media.c2.IComponentStore/default`（否则没有东西会拉起 C2 HAL）。
   脚本对 `vendor.img.pre_c2`（`5a5853c5…`）做原位改写，验文件树与 `dd574c17…` 一致（ext4 superblock 时间戳导致字节必然不同，别拿 sha 当判据）。
-- **系统补丁版**：`build/rebuild_system_patched.sh` 现在把产物写进 `current/parts/system_patched.erofs`（再拷一份到 `work/` 给写盘用），
-  不再只留临时目录；脚本末尾会核对 `4011db1d…`。
+- **系统补丁版 + 发布清理版**：`build/rebuild_system_patched.sh` 产物落 `current/parts/system_patched.erofs`（调试版）或
+  `OUT_PROD=.../parts/release/system.erofs`（发布版）；白名单里加了「被删掉的调试钩子」那两条 diff 形式
+  （`Only in …/system/etc: gk3-logdump.sh`），并用 `EXPECT_SHA` 代替写死的 `4011db1d…` 期望值。
 - **总闸**：`bash build/patches/verify_all.sh` 一次跑完五层「账本自证 + 关键 sha 钉死 + 补丁内容在位 + 反向检查 + 内核引导三件套」。出包、出 payload、发版前必跑。
 - **已补（2026-11-26）**：内核/DTB 这一层。以前它只活在构建机的 git 里，现在有账本：
   `patches/kernel-build/kernel-artifact.json`（HEAD `86450bb7…`、提交数 136、`.config` `900b5a5e…`、`vmlinuz.efi` `db5a1aa1…`、ESP 三件套）、

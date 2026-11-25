@@ -26,7 +26,7 @@ python3 "$ROOT/tools/ota/parts_manifest.py" verify --manifest "$MAN" || FAIL=1
 
 say "== 2. 关键分区 sha 钉死（设备实证值）"
 declare -A PIN=(
-  [system]=4011db1d5799307746d0b35a662f886ed30f250a35ec6c43185674ce48dbbaed
+  [system]=185b499142153ca628dd0a507bf970eb3bb0b887f5a1357f04187aea5b4886e8
   [vendor]=dd574c1756496e2fdf598748600da5229862fdef3a1bc8a591a5685f08c0defb
   [my_engineering]=ce71e4b632eac3f65ccb5bbfaddad0ba9721ffa1511a88a729637c34baa7e6bb
 )
@@ -38,8 +38,16 @@ done
 say "== 3. 补丁内容在位"
 V=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['parts']['vendor']['path'])" "$MAN")
 E=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['parts']['my_engineering']['path'])" "$MAN")
-T=$(mktemp -d); trap 'umount "$T/v" 2>/dev/null; umount "$T/e" 2>/dev/null; rm -rf "$T"' EXIT
-mkdir -p "$T/v" "$T/e"
+S=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['parts']['system']['path'])" "$MAN")
+T=$(mktemp -d); trap 'umount "$T/v" 2>/dev/null; umount "$T/e" 2>/dev/null; umount "$T/s" 2>/dev/null; rm -rf "$T"' EXIT
+mkdir -p "$T/v" "$T/e" "$T/s"
+if mount -o loop,ro "$S" "$T/s"; then
+    if grep -q 'ro\.virtual_ab' "$T/s/system/build.prop" 2>/dev/null; then fail "system：build.prop 还有 ro.virtual_ab.*（VABC 属性没清）"; fi
+    if [ -e "$T/s/system/etc/init/gk3-logdump.rc" ]; then fail "system：调试钩子 gk3-logdump.rc 还在"; fi
+    if grep -q 'gk3run\|gk3clean' "$T/s/system/etc/init/snapuserd.rc" 2>/dev/null; then fail "system：snapuserd.rc 里还有 gk3run / gk3clean（root runner 没撤）"; fi
+    if grep -q 'snapuserd -ublk' "$T/s/system/etc/init/snapuserd.rc" 2>/dev/null; then fail "system：snapuserd 还带 -ublk"; fi
+    ok "system：发布清理在位（无 virtual_ab / 无 logdump / 无 root runner / 无 -ublk）"
+else fail "system 镜像挂不上：$S"; fi
 if mount -o loop,ro "$V" "$T/v"; then
     RC="$T/v/etc/init/android.hardware.media.c2-service-v4l2.rc"
     if grep -q 'interface aidl android.hardware.media.c2.IComponentStore/default' "$RC" 2>/dev/null; then

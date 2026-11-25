@@ -79,11 +79,15 @@ sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pa
   重建元数据 → 改 BCAB 切槽 → 重启进新槽 → `markBootSuccessful`（`tries 6→1`）。
   legacy A/B 没有 `--merge`（那是 VABC 的）。
 - 发布清理已做（撤 `gk3run` root runner、`gk3clean`、`/metadata` 转储钩子、`ro.virtual_ab.*`、`snapuserd -ublk`），
-  **镜像尚未刷上机**（要等 OTA 收尾一起刷，否则会丢掉设备侧 root 调试通道）。
+  **并且已经用真实升级内容上机**：清理版 system `185b4991…` 打成 13 分区全量 payload，从 A 槽 OTA 到 B 槽，
+  重启 `slot_suffix=_b`、`boot_completed=1`，跑在 B 的是无 root 通道的发布版。
+  两槽现在故意不同源：**B = 发布版，A = 调试版（`gk3run` 还在，作 root 回退通道）**。
+  主账本 `manifest.json` 的 system 已切到 `185b4991…`。
 - 引导项已改名：gk3boot 两条 = `ColorOS 17 - slot A/B`，直连两条 = `Direct boot (rescue) - slot _a/_b`。
 - 补丁已全部脚本化并可自证：`build/patches/{p_vendor_c2.sh,p_my_engineering_otacerts.sh,verify_all.sh}` +
-  `verify_kernel.sh` 一条命令跑五层（分区账本 / 关键 sha / 补丁内容 / 反向检查 / 内核引导三件套），当前 `VERIFY_ALL_PASSED`。
-- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、用真实升级内容（非克隆）再跑一次 13 分区 OTA、
-  发布清理版镜像上机。
+  `verify_kernel.sh` 一条命令跑五层（分区账本 / 关键 sha / 补丁内容含发布清理 / 反向检查 / 内核引导三件套），
+  当前 `VERIFY_ALL_PASSED`。
+- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、BCAB 的 `markSuccessful` 复核（需进 rooted 槽读 misc）、
+  A 槽也升级到发布版（会失去 root 通道，需先决定调试手段）。
 
 详见 `docs/ARCHITECTURE.md`、`docs/BUILD-CURRENT.md`、`docs/INCIDENTS.md`。

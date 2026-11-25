@@ -270,3 +270,45 @@ BCAB 回写：slot_a pri=15 tries=1 ok=1  ← 6 → 1，markSuccessful 生效
 - `my_engineering_b` 仍是 OPPO 证书，`otacerts.zip` 只进了 `my_engineering_a`，发布流水线要把两边都换成自签
 
 
+
+## 第四次：真实升级内容（发布清理版 system）— 2026-11-26 03:33–03:55
+
+前三次 payload 的内容都是「在跑槽的克隆」，等于自证，不构成升级。这次换成真的新内容：
+
+1. `build/rebuild_system_patched.sh` 在**已清理的构建树**上重打 → `current/parts/release/system.erofs`，
+   `185b4991…`（1,137,397,760 B）。镜像内自检：`update_engine` md5 `dc757f0a…`（AVB 补丁在位）、
+   `ro.virtual_ab` 0 条、`snapuserd -ublk` 0 处、`gk3-logdump.rc/.sh` 已不存在、`gk3run`/`gk3clean` 两段已不存在。
+2. 只换 system，其余 12 个分区照主账本 → 生成候选账本 `current/manifest.release.json`（13/13 自证通过）→
+   `make_payload.py --manifest` 出包：10,059,528,316 B，sha256 `bbd9901e…`，manifest sha `a0871a8a…`。
+   设备侧先 `sha256sum` 复核 payload 再开 OTA（`kPayloadHashMismatch` 那次 CRLF 事故之后加的保险）。
+3. `adb push` 10 GB：**201 s / 47.7 MB/s**（Wi-Fi，比 USB 那条 36 s 慢一个数量级，规划上按 4 分钟算）。
+   引擎安装 **81.6 s**，`onPayloadApplicationComplete(kSuccess)` → `UPDATED_NEED_REBOOT`。
+4. 重启 → `slot_suffix=_b`、`boot_completed=1`、`event=none`、`selinux=permissive`。这是**发布清理版第一次真正上机**。
+
+在运行的 B 槽上复核（全部为 shell 权限，无需 root）：
+
+- `ro.virtual_ab.ublk.enabled` / `ro.virtual_ab.userspace.snapshots.enabled` 均为空
+- `/system/etc/init/gk3-logdump.rc`、`/system/bin/gk3clean`、`/system/bin/gk3run.sh` 都不存在
+- `/system/etc/init/snapuserd.rc` 里 `gk3run|gk3clean` 0 处、`snapuserd -ublk` 0 处
+- `snapuserd` 进程 0 个（legacy 路径没被 VABC 拉起），`/dev/block/mapper` 里 13 个 `_b`
+- `ps` 里 `update_engine` 守护进程在跑（它会负责 `markBootSuccessful`）
+
+**这次挖出来的新事实（重要，会误导「回读比对」）**
+
+- 引擎把目标槽重排成「紧贴 A 槽尾部」：`system_b` 从 `19660800` 挪到 **`19649560`**，其余 B 分区同样前移；
+  所以按旧 extents 去 `dd` 回读，读到的是**空档里的旧垃圾**（首字节就是 aarch64 机器码，不是 EROFS 超级块）。
+  正确回读方式：先 `lp_ab_meta.py parse` 拿新 sector，再 `dd`。
+- `super` 头 4 份元数据副本这次**不一致**：`12288`/`143360` 还是旧布局（`system_b@19660800`），
+  `77824`/`208896` 是新布局（`system_b@19649560`，内容 sha 实测 `185b4991…`）。四份 CRC 都合法。
+  实测开机能进新槽，说明启动路径选的是新布局那份；但**"四份副本一致"不能再当默认假设**，
+  以后每次 OTA 后要四份都 parse 一遍比对（`work/meta_copies2.py` 那套逻辑）。
+- 两槽现在故意不同源：B = 发布版（无 root 通道），A = 调试版（`gk3run` 还在）。想回 A 用 gk3boot 的
+  `ColorOS 17 - slot A` 条目；BCAB 现在 `b:15/6/0`（引擎置的 tries=6 + ok=0），
+  `markSuccessful` 是否已把 `ok` 置 1 **本轮没法确认**——misc 对 shell 不可读，要等下次进 rooted 槽再读 `misc`。
+
+## 待办
+
+- 进 A 槽读一次 BCAB，确认 `markSuccessful` 是否生效（`b:15/1/1`）
+- `update_engine` 的 3 字节 AVB 补丁在 legacy A/B 下重跑一次分槽安装复核（计划保留）
+- `my_engineering_b` 的自签证书这次已验证（实测 `ce71e4b6…`，与账本一致）；A 槽仍是旧版，等 A 也升级时一并统一
+- 原厂「软件更新」UI 复刻 + App 端 `applyPayload` 还没接；当前 OTA 仍是 `update_engine_client` 手动跑
