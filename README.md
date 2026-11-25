@@ -66,6 +66,10 @@ sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pa
     跑通 `bash build/patches/verify_all.sh` 再出包。没有脚本的补丁 = 下次必丢。
 13. **验内容不验字节**：ext4/EROFS 重建做不到字节一致（superblock 时间戳、mkfs 版本），所以脚本核对的是文件树；
     账本里的 sha 是**设备实证产物**的 sha，别用重建产物去覆盖它。
+14. **内核补丁层同样有账本**：`patches/kernel-build/kernel-artifact.json` 钉住内核树 HEAD、提交数、`.config` sha、
+    `vmlinuz.efi` sha、ESP 三件套 sha；`kernel-files.lock.json` 钉住补丁改过的 136 个文件内容；
+    `kernel-7.2.9-gaokun3-combined.patch` 是能重建整层的合并补丁。动内核（打补丁/改 config/重新编译）之后，
+    必须重导这三件 + 上新机验证 + 更新账本，再跑 `bash build/patches/verify_kernel.sh`（要证明可重建就加 `REPLAY=1`）。
 
 ## 当前状态（2026-11-26）
 
@@ -77,6 +81,9 @@ sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pa
 - 发布清理已做（撤 `gk3run` root runner、`gk3clean`、`/metadata` 转储钩子、`ro.virtual_ab.*`、`snapuserd -ublk`），
   **镜像尚未刷上机**（要等 OTA 收尾一起刷，否则会丢掉设备侧 root 调试通道）。
 - 引导项已改名：gk3boot 两条 = `ColorOS 17 - slot A/B`，直连两条 = `Direct boot (rescue) - slot _a/_b`。
-- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、`my_engineering` 证书版产物、vendor C2 补丁脚本化。
+- 补丁已全部脚本化并可自证：`build/patches/{p_vendor_c2.sh,p_my_engineering_otacerts.sh,verify_all.sh}` +
+  `verify_kernel.sh` 一条命令跑五层（分区账本 / 关键 sha / 补丁内容 / 反向检查 / 内核引导三件套），当前 `VERIFY_ALL_PASSED`。
+- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、用真实升级内容（非克隆）再跑一次 13 分区 OTA、
+  发布清理版镜像上机。
 
 详见 `docs/ARCHITECTURE.md`、`docs/BUILD-CURRENT.md`、`docs/INCIDENTS.md`。

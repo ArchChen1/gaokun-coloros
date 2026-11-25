@@ -99,3 +99,32 @@ make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) vmlinuz.efi
 - **系统录音机不能用**：`AEC.AudioxService` 反复初始化失败，OPPO 那个效果库（UUID `41f6c0f4-…`）不在我们 `vendor/etc/audio_effects_config.xml` 里，属 userspace 缺库，与内核无关；第三方录音正常。
 - `camera/0005`、`0008` 待手工移植。
 - `ro.virtual_ab.ublk.enabled`、`ro.virtual_ab.userspace.snapshots.enabled` 目前是临时 `setprop`，重启即失，必须固化进镜像，否则 update_engine 回落到 legacy 路径。
+
+## 十、补丁账本与校验（2026-11-26 起）
+
+内核这一层以前只活在构建机的 git 里，出了这台机器就没人能证明"补丁还在"。现在和分区补丁用同一套规矩：
+
+| 文件 | 钉住什么 |
+|---|---|
+| `patches/kernel-build/kernel-artifact.json` | 内核树 HEAD `86450bb7…`、提交数 136、`.config` sha `900b5a5e…`、`vmlinuz.efi`（16,134,656 B / `db5a1aa1…`）、ESP 三件套 sha |
+| `patches/kernel-build/kernel-files.lock.json` | 补丁层改过的 **136 个文件**逐个 sha256 |
+| `patches/kernel-build/kernel-7.2.9-gaokun3-combined.patch` | 基线 `2f6ee52…`（v7.2.9 导入）→ HEAD 的合并补丁，874,921 B |
+| `patches/kernel-build/kernel-patch-manifest.txt` | 语义层：哪些上游补丁打了、哪些故意没打、为什么 |
+
+校验：
+
+```bash
+bash build/patches/verify_kernel.sh          # 版本/git/config/补丁文本/文件锁/产物，约 3 秒
+REPLAY=1 bash build/patches/verify_kernel.sh # 再检出基线打一遍合并补丁，逐字节比 136 个文件，约 1 分钟
+bash build/patches/verify_all.sh             # 总闸，第 5 层就是它
+```
+
+合并补丁已经实测过：检出 `2f6ee52` → `git apply` → 136/136 文件与当前树逐字节一致。所以内核树丢了也能重建（前提是手上有 v7.2.9 的 tarball 或同基线仓库）。
+
+**动过内核之后必须做的三件事**（顺序不能省）：
+
+1. 重新导出合并补丁 + 文件锁（`work/make_kernel_lock.sh` 那套逻辑，改 HEAD~N 的 N），更新 `kernel-artifact.json` 的 head/count/patch sha；
+2. 重新编译 `vmlinuz.efi`，**上新机验证能开机**——编译产物 sha 变了就不能直接写账本；
+3. 刷进 ESP 并回读 sha，再更新 `esp.image`。
+
+内核 build 不可能字节复现（工具链、时间戳），所以这一层验的是"源码相同 + 产物相同"，不是"能重编出一模一样的字节"。

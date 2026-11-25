@@ -3,11 +3,13 @@
 #
 #   bash build/patches/verify_all.sh [manifest.json]
 #
-# 检查四层：
+# 检查五层：
 #   1) 账本自证：13 个分区 path/bytes/sha256 与 manifest 完全一致
 #   2) 关键 sha 钉死：system / vendor / my_engineering 必须等于设备实证值
 #   3) 补丁内容在位：挂载 vendor / my_engineering，直接看补丁文件本身
 #   4) 反向检查：产物里不该出现的东西（旧 system、未打补丁的 C2 rc、原厂 otacerts）
+#   5) 内核/引导：内核树 git HEAD + config sha + vmlinuz.efi sha + ESP 三件套
+#      （内核补丁不在分区账本里，单靠这一层兜。SKIP_KERNEL=1 可跳过）
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
@@ -58,6 +60,15 @@ case "$V" in
   */vendor.img.pre_c2) fail "vendor 指向了 pre_c2（未打 C2 补丁）";;
   *) ok "vendor 不是 pre_c2";;
 esac
+
+say "== 5. 内核 / 引导三件套"
+if [ "${SKIP_KERNEL:-0}" = 1 ]; then
+    say "  --   SKIP_KERNEL=1，跳过"
+elif [ -d "$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['kernel']['tree'])" "$ROOT/patches/kernel-build/kernel-artifact.json" 2>/dev/null)" ]; then
+    bash "$HERE/verify_kernel.sh" || FAIL=1
+else
+    say "  --   内核树不在本机（另一台机器？），跳过第 5 层；发布机器上必须跑"
+fi
 
 say ""
 if [ "$FAIL" = 0 ]; then say "VERIFY_ALL_PASSED"; exit 0; fi

@@ -9,6 +9,9 @@ build/patches/**/*.rc text eol=lf
 *.rc text eol=lf
 *.prop text eol=lf
 
+# 内核合并补丁 855 KB：不做任何换行/编码转换，字节必须和导出时一致
+patches/kernel-build/*-combined.patch -text
+
 # 二进制
 *.png binary
 *.jpg binary

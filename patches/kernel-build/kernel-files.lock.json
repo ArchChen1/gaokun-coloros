@@ -1,0 +1,552 @@
+{
+ "note": "\u5185\u6838\u8865\u4e01\u5c42\u6539\u52a8\u8fc7\u7684 136 \u4e2a\u6587\u4ef6\u7684\u671f\u671b\u5185\u5bb9\uff1b\u6253\u8865\u4e01\u540e\u9010\u6587\u4ef6\u6838\u8fd9\u91cc",
+ "base": "2f6ee52d42deae4650756aaf740b1525f16b956e",
+ "head": "86450bb77176ba1ccf2aad21c4a8ac40894e1fc8",
+ "count": 136,
+ "files": [
+  {
+   "path": "Documentation/devicetree/bindings/clock/qcom,sa8775p-camcc.yaml",
+   "sha256": "ec4cb1091a6ab1def351d69fc58b3095fb2692b07aad19db9dbe6e11889411e7"
+  },
+  {
+   "path": "Documentation/devicetree/bindings/display/panel/himax,hx83121a.yaml",
+   "sha256": "5048955d109558d0f9e6c4c16197fb3a76df3b2f85acf1375477cface4b41585"
+  },
+  {
+   "path": "Documentation/devicetree/bindings/media/qcom,sc8280xp-camss.yaml",
+   "sha256": "8a89d4a7cb76b5aec0018dab7fba21ae27e228efaf0ad7e0205fe28ca02836d2"
+  },
+  {
+   "path": "arch/arm64/Kconfig",
+   "sha256": "637e419fe0a707f2da7ae7f5e9cda4c2cc93f51cc2a2e1b03f3e547b6a334825"
+  },
+  {
+   "path": "arch/arm64/boot/dts/qcom/sc8280xp-huawei-gaokun3.dts",
+   "sha256": "6151d3c22f7fea8f406edee1de897284c9f2a1d11642ad20abb5dcf12c3c2196"
+  },
+  {
+   "path": "arch/arm64/boot/dts/qcom/sc8280xp.dtsi",
+   "sha256": "5c36b4242c604ceb12a4c4bfd13344aafde2a925e429c19378e6fa22455904f3"
+  },
+  {
+   "path": "arch/arm64/include/asm/processor.h",
+   "sha256": "cade2cef8fea710157717eca191c91d56f56ea224f70a337c974d7534b3a3ad8"
+  },
+  {
+   "path": "drivers/bluetooth/btqca.c",
+   "sha256": "3488a61c95dc868ff6ec324f6c87804cfd92d1f68f0f6904a9b71e6ed8e1d24f"
+  },
+  {
+   "path": "drivers/clk/qcom/camcc-sc8280xp.c",
+   "sha256": "5972032682b6ad794ab39f34dfa841bec3131a2b5caf44c72a3218168d688b55"
+  },
+  {
+   "path": "drivers/firmware/qcom/Kconfig",
+   "sha256": "94d676b7510c14f520c9e78b35f32d8ac5baee9de9970fbb0e3ffa2f202bcfdf"
+  },
+  {
+   "path": "drivers/firmware/qcom/Makefile",
+   "sha256": "f368854e0a631a75568d9d7a9afee2c99315fd5b0119ccd33393c4b9f5857654"
+  },
+  {
+   "path": "drivers/firmware/qcom/gaokun3_fpcmd.h",
+   "sha256": "99283c0327cc4c5183751ee325a393c1cca91af47bda5dd561906c703db93e14"
+  },
+  {
+   "path": "drivers/firmware/qcom/gaokun3_fpcmd_goodix.h",
+   "sha256": "0146b4323442204eaf62817950f89d1c5f5313e560f082c6c4d1ab9242587d22"
+  },
+  {
+   "path": "drivers/firmware/qcom/qcom_qseecom_fpcmd.c",
+   "sha256": "68b323844e674ca5883ce2974d2cf24fa3c9e2291ce433d50d2425d7969a69e3"
+  },
+  {
+   "path": "drivers/firmware/qcom/qcom_scm.c",
+   "sha256": "ca6ab6f17234f523f8b363c01a4ef9e5ee7104d2ca2ddcf9c6c2b3fa747f368e"
+  },
+  {
+   "path": "drivers/gpu/drm/drm_crtc.c",
+   "sha256": "051e85060dc56fa25ecb7d8de7c385e7fac65ef91cd2f88fbd491e7b1c6992a9"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/Makefile",
+   "sha256": "4d62550c1c63257873ef14abf24fda591625dd0a6b7cec1345c3ce2e69304fbe"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/a6xx_catalog.c",
+   "sha256": "fb6a7283f24c8a3e3c60c0f28e0b7921fa3006b744fa48ef3e021b01f8dc9b51"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/a6xx_gpu.c",
+   "sha256": "08ef0dad04fb171b7d8f3f3d37a579fcedbe82909615e14fa6722851b2697341"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/a6xx_gpu.h",
+   "sha256": "4e06eb0ec9c255e66ecb34056909d58901fd9b5b57989997c08bd666db1f3b46"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/a6xx_preempt.c",
+   "sha256": "e8077b8c910abbdfd2ce025d360875f0349a76f26687ba1e7d043e37842e2d9a"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/a8xx_preempt.c",
+   "sha256": "482ce10e54c7b0015f4362e85dda21054edf3aff6eb8e14427ad5d58e5c105c6"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/adreno_device.c",
+   "sha256": "364ba6574b322afc4e646fdb0531ceacd800532d89066106611f5d5dbe6feb74"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/adreno/adreno_gpu.c",
+   "sha256": "40028ae391fb9fab4606a9eee279fa0c5ba6966e3c9dd98823acf154d3cc02ae"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/catalog/dpu_8_0_sc8280xp.h",
+   "sha256": "858ebb57828503124a6916f1f0e736536f065ee2ab1478eec4d6bce2cae53130"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c",
+   "sha256": "6d2252ac8dd444441cc5131f04ae23edfaf9d7309b1e554ec5c3a41d16c4052f"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.h",
+   "sha256": "e947d694a9995981f3e5cdb9d55c9406db2a8c7df3551146fe5bcc006a53392d"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_encoder.c",
+   "sha256": "c5ff3a0b211b99cf23e4ef832df9390ee3f36435cc17e376d867f9557d724cee"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_encoder_phys_vid.c",
+   "sha256": "578858072cb65edece3efd7fdc64a6b1231a8ff883d62b3ced1a33d6717562b6"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_hw_catalog.c",
+   "sha256": "006815dbc25df31c496c30e0bce21f93c113a3ad02fa9cf70d2b4c9e5e5af248"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_hw_catalog.h",
+   "sha256": "d962c92d67c4d17b3992a66779dbbacd91fd2493421732f2c67e9a40ed3865e7"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_hw_ctl.c",
+   "sha256": "5c4add9b0d7049c9e42ff65133549fa74ecad253c81e4aa1d2b3aa408d249350"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dspp.c",
+   "sha256": "8243d25ce563e5885ac4503738259716030f77e240eaaea0d0e512605b8952f7"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_hw_dspp.h",
+   "sha256": "62092a3dd1ed02f8292b5b65f45ef7548fa08ff962cf5e58ad74ef0253203932"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_kms.c",
+   "sha256": "06c560a30874c2f6106ffbe164fb79196b4a0add35afd9e2871de080b8751000"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_kms.h",
+   "sha256": "23b4d3ca71c28d4c20f838ce28df42a87370e05bfa0cf772324ff156242bd0ee"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_panel_cal.c",
+   "sha256": "03808cad22d55533387de2b08cf435dad0675006b358c1b175b0a376f3d1f67d"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/disp/dpu1/dpu_panel_cal.h",
+   "sha256": "cde53c0884acdf1f01791eac2e30c904548abaef23d62f05878f1160c5faf66c"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/dsi/dsi_host.c",
+   "sha256": "4034ad9628eb16373342e66783795f3a81dd4f0fff9d73a5c6ed523682554280"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/dsi/phy/dsi_phy.h",
+   "sha256": "11fe5c856ec083d3fd277a2eaa38244cb60fc8116848379ab3f3c7156a986f3b"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/dsi/phy/dsi_phy_7nm.c",
+   "sha256": "b9390355b88e50dd53ac5c151b68772cb258aa36b9a0671ff0cf86e23c0db2f3"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_drv.c",
+   "sha256": "3bb40940aad36c9d70ddfbbeaf656149b150c76352a45b789a48cebff8656935"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_gem.c",
+   "sha256": "fc7afc70e1b785c069ae577f15e4312e3c8068167be1c6eaa230bf2a82274ce4"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_gem_submit.c",
+   "sha256": "4fef8876bdca48da71bec2b68d523c1e9a130415d336864aca32bd01a573c263"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_gem_vma.c",
+   "sha256": "cb2cad977f1c52918e6a5b865810d57d15f8f6ca0d327212395a034c30159b82"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_gpu.c",
+   "sha256": "01d5094ef10a0577519410711c9fed02ca5df15f1ef832983caff842a3a0de73"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_gpu.h",
+   "sha256": "cf424df8252687af8a7460b166fb0e1992bab8cbaa4066d4bf58e3f93001696f"
+  },
+  {
+   "path": "drivers/gpu/drm/msm/msm_submitqueue.c",
+   "sha256": "3611db4bf82fd03c113930e256ccf9aa102b12d73f504b0c6e99ce33f187fe96"
+  },
+  {
+   "path": "drivers/gpu/drm/panel/Kconfig",
+   "sha256": "e13a749116f2133fc44b42d285edfb1ef3da414d34c7f5ab168aad565ab38ac6"
+  },
+  {
+   "path": "drivers/gpu/drm/panel/panel-himax-hx83121a.c",
+   "sha256": "47fca3179d20847e5b1457668c8c2ae25019aa6000a6f1538ace283f7508c688"
+  },
+  {
+   "path": "drivers/hid/usbhid/hid-core.c",
+   "sha256": "4a119d29f53e5caaa9acd9a0b43d1d99fe73dfd3e152321d67411d1f88ceb917"
+  },
+  {
+   "path": "drivers/input/touchscreen/Kconfig",
+   "sha256": "7c8bbd79890239cbef495b760bc37073592f83382310ec45a63fbffe5640d937"
+  },
+  {
+   "path": "drivers/input/touchscreen/Makefile",
+   "sha256": "7206f40e7eb6befd97714b932bee15053609ce7fa408b2da3f3808a1332083fe"
+  },
+  {
+   "path": "drivers/input/touchscreen/himax-spi-core.c",
+   "sha256": "3d6e3eb0b44368394d9a0e8c26a7b81d74c1c3ab88076d6cee72406690760f33"
+  },
+  {
+   "path": "drivers/input/touchscreen/himax_hx83121a_pen.c",
+   "sha256": "65211ed93f8c31b61d5981224ac5fcc4aa893a452a916014c8ceae2ce66b4edf"
+  },
+  {
+   "path": "drivers/input/touchscreen/hx-algo.c",
+   "sha256": "d12713114a9eb8c46173530701a5541324e3479d8614af2b0d47017527dc05e0"
+  },
+  {
+   "path": "drivers/input/touchscreen/hx-algo.h",
+   "sha256": "577550f3be9f9eea1f75f5c8b96cbcac623f384944309b3aeab91448f8954dc3"
+  },
+  {
+   "path": "drivers/iommu/arm/arm-smmu/arm-smmu-qcom.c",
+   "sha256": "190bbfcb7c5bace1b55be51a8cf29a27140bd0bffc068fa91fac076dbc2d6c00"
+  },
+  {
+   "path": "drivers/media/i2c/hi846.c",
+   "sha256": "1a2f3c65ebf7966fb7a75ac087e7530ab091e0a323f4d955c99b9b17040f911a"
+  },
+  {
+   "path": "drivers/media/i2c/ov13b10.c",
+   "sha256": "90648380e31602400ebf9021883b596568958fd36425e0dbd5ea32c6e5a59ab3"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/Kconfig",
+   "sha256": "ad6538a9cdb76aa1320669528594678ca6ec706196da83ec623487219e70a766"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/Makefile",
+   "sha256": "11f11c997373e355507aa173e019b7ad4b8a576b93fd57a66a1018354ee6a874"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-csid-gen2.c",
+   "sha256": "5d999f0639402a69123590477e23f16911563068c0636f994841a00246c5c69e"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-csid.c",
+   "sha256": "6a52ea43416a0d20f11cfae86b018a8f4a8cba605f23d21d77e3a183eca6e755"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-csid.h",
+   "sha256": "29a85ef6aeff383cc4a4cf23e48acaf44f2b31f8c3264973adde7a645e8ce21b"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-csiphy.c",
+   "sha256": "2a79384685a1f504f05231dc05624a07a9b8c55bf95b8b4f5a9c59af35a95916"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-ispif.c",
+   "sha256": "c2fd37aed5fe8ea0daa4ef86dee2e435d0988080f1a97b887835c0cec2a22e82"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-tpg.c",
+   "sha256": "7b6e0ad1a4550d048d0e9edc5802f0264454734ee3ab369b53e45138b4aa71a2"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe-17x-disp.c",
+   "sha256": "e563aa61ca39c96dee7b565500cbfd9d5574390b21eef6d49e09dd3a8ec01775"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe-17x-disp.h",
+   "sha256": "06b1f70a48da7e31d417a7c688c0b17f6d7972711d0c84624d613dd0aa350bfd"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe-17x-meta.c",
+   "sha256": "4584b0f1b37e8a33cefe75adeb93b489e9c798be922e9c2fce6dd3a608ba1263"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe-17x-meta.h",
+   "sha256": "4318c587b6d10ceb463147fa6f53abe1075283f1392db62e457777b128930444"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe-17x.c",
+   "sha256": "e76c984e1df415c6088e1c51e925cc731c1cc6ad75a3c98b5cbbfb825e0016e0"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe.c",
+   "sha256": "928841aa2626365c78da0a76e1958d39d0b685be869129a620455dda5a58c981"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-vfe.h",
+   "sha256": "780be199ab31a51e3fb2f0289d52ba86385e51d852c8d0147d314818debbd886"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss-video.c",
+   "sha256": "33653cfb43f9b7608e9401207b1e7200013c698b162ac651b0350511b865146b"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss.c",
+   "sha256": "a4b17293eefc31efc602af21f49da336466cfade27875ca82b1b2a0bc83110b6"
+  },
+  {
+   "path": "drivers/media/platform/qcom/camss/camss.h",
+   "sha256": "0a794a65574197edf746fe4f1576e5b77a8d86e017ae3c0c88dde94b6fa9f4b9"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/Kconfig",
+   "sha256": "2ba9342f688d16ff4b94dec72fb47d0d2ac8159f0bf1adaf1d50753a3a4aae69"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_buffer.c",
+   "sha256": "703a714b00fc6447fc076a015ac48eb8826d87c91a37be135c464f3cea700606"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_buffer.h",
+   "sha256": "43990a449c3e1f7bba181e9387e48b9be16ecf2d89f78c72a563e0ae000ed245"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_core.h",
+   "sha256": "e194531c393a2c056af508c72f0b034bf4567fd0b42989b9336030223ad67bd7"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_ctrls.c",
+   "sha256": "41569cff40af3628249956c3e449c2fb4538c2dc4fbb1855a5d8d96874e4f3c2"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_ctrls.h",
+   "sha256": "b048f146915647015458a594ce0c53d9b7657a9bf6ffca68ce514de5df6a6350"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_common.c",
+   "sha256": "ffefe7c315e95e16a8946f16fcc60a26bc37f0c4996652565f6ff7427ee9542e"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_gen1.c",
+   "sha256": "7f4c7ebbddf874e756608a6409b2fc0d6f86f298de171cbd5eccb656c34488ff"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_gen1_command.c",
+   "sha256": "b04175e759d30a19a7b4f4fa2c25bb7e542878fc13186166db4aaea5c40aedf3"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_gen1_defines.h",
+   "sha256": "ecddd6cd1a19e41333967a78a390584c63ce3759ab88ef45ba39a39cf0200336"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_gen1_response.c",
+   "sha256": "c923ed245dd4cbd49566347fded9966760cff697064a2b7e0ee1ec13844db708"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_gen2.c",
+   "sha256": "93bb6dc2f4d14e785bd7846e6ed861e7a0e66c4238bd1e8494728a2c5d8362a4"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_hfi_gen2_defines.h",
+   "sha256": "bc141030221bd863afb10a1282f057976a8779c45ce2ff396a79d0c2daca9809"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_instance.h",
+   "sha256": "0206fe97ab59859e09ada351c1d88eede93fec8aff5a66e4304d97b3438a88ec"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_platform_common.h",
+   "sha256": "e1195e3437ad795a3692c22047f6c0aefe9b842cf706663ac66ede3bf8d5ab25"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_state.c",
+   "sha256": "b3329798ea9093dfc04f9f0f0b19ccc1d5afffe3e4ad2e14d507d38b4b7cfd00"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_vb2.c",
+   "sha256": "7ef5b74ddf2ca5dce6dfb0aa2b504f8fac57289edc12e22552912609f4953910"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_vdec.c",
+   "sha256": "7ba65bda303759d9ee58171b448e41d8b904c2ac18e6652b34bf0a6edd306de6"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_vidc.c",
+   "sha256": "442ba69cc172d3bd483745f570df5535bb312193289a33572fc1e5e684b7ac0c"
+  },
+  {
+   "path": "drivers/media/platform/qcom/iris/iris_vpu_common.c",
+   "sha256": "dab1bac1ddecba058139e4eb60d0fa768be5594753af34761e611772c73a9126"
+  },
+  {
+   "path": "drivers/media/v4l2-core/v4l2-ioctl.c",
+   "sha256": "5488af0cfe9d0991c368a60415c1973455e9064a2841f6f49aeb2488c549ae69"
+  },
+  {
+   "path": "drivers/misc/fastrpc.c",
+   "sha256": "c33de9af005051408dae41545fc76242b788b829dd4ef40d6195b2a8b8b1e0dd"
+  },
+  {
+   "path": "drivers/platform/arm64/huawei-gaokun-ec.c",
+   "sha256": "af9e1b71b9ef029a2d51fbea982e20ebade5605bddda53259f37ba61b19ca4a4"
+  },
+  {
+   "path": "drivers/pmdomain/qcom/rpmhpd.c",
+   "sha256": "5f3eae8652659559e681ea9a6d755e163a925bee854f3f50626a70f8d1091f9c"
+  },
+  {
+   "path": "drivers/power/supply/huawei-gaokun-battery.c",
+   "sha256": "3e9704ab79a26e56317c43a7df6f7b79d21ceda149290f3bfea696324d779995"
+  },
+  {
+   "path": "drivers/soundwire/qcom.c",
+   "sha256": "8b0f2bd77a04b710e3afbd70dbed60c54ff5a19d03da72e735d6310d1150b2a1"
+  },
+  {
+   "path": "drivers/staging/Kconfig",
+   "sha256": "213689ae033060f4e1c9a77a2d6aa62c2e0ecfc3ce28a76244927dcd7646bbae"
+  },
+  {
+   "path": "drivers/staging/Makefile",
+   "sha256": "3eddf7f22e6cd202e3b7f0f8a68488eb2560665b4e3858badbb19f0583077245"
+  },
+  {
+   "path": "drivers/staging/android/Kconfig",
+   "sha256": "94a48980152618b65d32bcda0ffaa4753229465b7f4a84ebb13d727d98603391"
+  },
+  {
+   "path": "drivers/staging/android/Makefile",
+   "sha256": "e65ccec002cc0a5d7aac24bd62503c0d84822b086902fbfec10c6619008e2c9b"
+  },
+  {
+   "path": "drivers/staging/android/ashmem.c",
+   "sha256": "72c0f4a7e340627477c623cc4d6f0282ac39696d1c0f88a8462c93e038ceb3bf"
+  },
+  {
+   "path": "drivers/staging/android/ashmem.h",
+   "sha256": "d8908b4da4a8aefae2bdda7ad9a9260e3abd6adcba2594fbef2eed2880d47572"
+  },
+  {
+   "path": "drivers/staging/android/uapi/ashmem.h",
+   "sha256": "99834c16bacd58c19d2e4f37abf729e45e505afbef0e236389a891751d12c95c"
+  },
+  {
+   "path": "drivers/usb/gadget/Kconfig",
+   "sha256": "ba59d4134c9b7be004301325d07f13f95dd94c8fad3e7acc6e224bf01c626084"
+  },
+  {
+   "path": "drivers/usb/gadget/Makefile",
+   "sha256": "3633052889d6eabf86d8edac51867e3e17a939df28a7fa2a4927417644b7abd5"
+  },
+  {
+   "path": "drivers/usb/gadget/android_usb_state.c",
+   "sha256": "19256fee63d165165acbacb9d48ea5ee80114ae47a2d047c002511d668de380f"
+  },
+  {
+   "path": "drivers/usb/gadget/configfs.c",
+   "sha256": "f7515f4dcc63b9baa4bdfb909807d4aa898d14ba5d7f79a6fa5c87397fbdc2ea"
+  },
+  {
+   "path": "include/linux/firmware/qcom/qcom_scm.h",
+   "sha256": "8ed2dcd2d5e870a4f155e62a15852d16763adbc1ed24704be4f8400eb4f45970"
+  },
+  {
+   "path": "include/linux/hid.h",
+   "sha256": "2ee70b072f4dfae915f875130dcdd0ea8de9ffc74108fb534ceb7047c2b9c05a"
+  },
+  {
+   "path": "include/linux/module.h",
+   "sha256": "3def18127fd73c07bd5217248ce6fbc8530ddb8e471acf1875f3cdc8e8596815"
+  },
+  {
+   "path": "include/linux/netfilter/xt_quota2.h",
+   "sha256": "b61e0c65914a21a1d31b4df339c949439885fc609bdd5625aa573b1d509298cc"
+  },
+  {
+   "path": "include/linux/qcom_iommu_cp_nonpixel.h",
+   "sha256": "3f182aa8fd2eb04ef11deee030ef5cc7d6f2702644e5ff02837312bf1f23c864"
+  },
+  {
+   "path": "include/uapi/linux/media/qcom/ife17x-config.h",
+   "sha256": "773db0695f127a742ccb7ff89c3299a19dc7a6388c592166e211529f903698fe"
+  },
+  {
+   "path": "include/uapi/linux/videodev2.h",
+   "sha256": "b612264a258ae814c9fe7e9bb67da93c968034b05df6dc9ce106abe2df99ed5c"
+  },
+  {
+   "path": "kernel/sys.c",
+   "sha256": "4dbf0ac49e79892ef03f66714249caa3a67ae9eb48a9a519f024e0d9f091f225"
+  },
+  {
+   "path": "net/netfilter/Kconfig",
+   "sha256": "5fc4bca5526a73c98cfcae01bc4b9db98ff8a7dbe62f5f494672ebbc94b2a6bf"
+  },
+  {
+   "path": "net/netfilter/Makefile",
+   "sha256": "0e91de3f1df0370725e83bc6ce79ecb0097cb4462510de6357436d7d495baf85"
+  },
+  {
+   "path": "net/netfilter/xt_quota2.c",
+   "sha256": "f76423cf633001995fe231d0e96412f444e8a8378350b04fc7149719daaf7ac2"
+  },
+  {
+   "path": "security/selinux/include/classmap.h",
+   "sha256": "d8d657f9695c06899502330f00ed9d88f167ce710ad219802c0aeefe4a935099"
+  },
+  {
+   "path": "security/selinux/nlmsgtab.c",
+   "sha256": "3c50084c65a063b507ed29b009383b2d820c52c7b7d9d91911533e5923bfdc79"
+  },
+  {
+   "path": "sound/soc/codecs/Kconfig",
+   "sha256": "79d43cfebd9214bb0b42dceb00e64dae48e63039974fbd459738bc9f7280f203"
+  },
+  {
+   "path": "sound/soc/codecs/lpass-rx-macro.c",
+   "sha256": "bcb95360854f26351dd2136f1e84be012fe7bb9c86ab0805d6ede06e56b40eed"
+  },
+  {
+   "path": "sound/soc/codecs/lpass-tx-macro.c",
+   "sha256": "cfa0f0bbab170e5a36dbd15489502ae4ff9cc696e6c195cd6e7155a737f8cdca"
+  },
+  {
+   "path": "sound/soc/codecs/lpass-va-macro.c",
+   "sha256": "44d738ef7d745e4a779319932c8929a6bf832a6e166836f04a3bcf6d1034bd98"
+  },
+  {
+   "path": "sound/soc/codecs/lpass-wsa-macro.c",
+   "sha256": "1511f2e33a6cab165fa80a99e8fffaada098903938ada09f062628ad1bacd42a"
+  },
+  {
+   "path": "sound/soc/codecs/wsa883x.c",
+   "sha256": "6f13efd52377972842a734c9c9e9fc3d93d0efb2c3d9186165411dfd73943171"
+  },
+  {
+   "path": "sound/soc/qcom/qdsp6/q6apm-dai.c",
+   "sha256": "cd0f4622c30a90d0148fa2edf65ccda70222fa2fc548826064626275d78f4e71"
+  },
+  {
+   "path": "sound/soc/qcom/sc8280xp.c",
+   "sha256": "55cd86a1309e6af56861347d4498d10e3eaecfb66bf6eb4769f221a926bfc7c8"
+  }
+ ]
+}

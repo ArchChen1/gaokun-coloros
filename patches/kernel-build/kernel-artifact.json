@@ -1,0 +1,53 @@
+{
+  "note": "内核与引导三件套的账本。Image 是设备实证产物（ESP slot_a/slot_b 与 boot_a/boot_b 同源），内核源码用 git 提交钉死。",
+  "kernel": {
+    "tree": "/home/cenmin/kbuild/linux-7.2.9-gk3",
+    "version": "7.2.9",
+    "branch": "master",
+    "head": "86450bb77176ba1ccf2aad21c4a8ac40894e1fc8",
+    "commit_count": 136,
+    "config_sha256": "900b5a5ef217ebe3483a6b44317de083a8ff00066265c50c36644e4453743786",
+    "config_in_repo": "patches/kernel-build/kernel-config-7.2.9-gaokun3.txt",
+    "base_commit": "2f6ee52d42deae4650756aaf740b1525f16b956e",
+    "combined_patch": {
+      "path": "patches/kernel-build/kernel-7.2.9-gaokun3-combined.patch",
+      "bytes": 874921,
+      "sha256": "d2bf4704023fe923f5a5965da035e39921420a4b634049d875fa6f569e60868a",
+      "applies_to": "v7.2.9 基线（2f6ee52 提交）",
+      "verified": "已用 git worktree 检出基线 → git apply → 136/136 文件与当前树逐字节一致"
+    },
+    "files_lock": {
+      "path": "patches/kernel-build/kernel-files.lock.json",
+      "files": 136
+    },
+    "artifact": {
+      "path": "/home/cenmin/kbuild/linux-7.2.9-gk3/arch/arm64/boot/vmlinuz.efi",
+      "bytes": 16134656,
+      "sha256": "db5a1aa10558e02781156ca24c42fc190caffb337e88d224526bfe79d8e8e57d",
+      "built_from_head": "86450bb77176ba1ccf2aad21c4a8ac40894e1fc8",
+      "build_cmd": "make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) vmlinuz.efi"
+    }
+  },
+  "esp": {
+    "image": {
+      "bytes": 16134656,
+      "sha256": "db5a1aa10558e02781156ca24c42fc190caffb337e88d224526bfe79d8e8e57d",
+      "origin": "内核树 vmlinuz.efi（同 sha，已和 ESP 现场比对过）"
+    },
+    "dtb": {
+      "bytes": 174904,
+      "sha256": "e0b63b9006dad89bb71f614ff91105fc5a521c2d9e82ca4ca6ad4c42d81bebc6",
+      "origin": "原厂（dts 24 条补丁打不上，不自己编 dtb）"
+    },
+    "ramdisk": {
+      "bytes": 13145568,
+      "sha256": "9cbc53393991aa93952c372746129b3900a103583ba1a9d107731a12748b5a6f",
+      "origin": "原厂"
+    }
+  },
+  "limits": [
+    "内核 build 不可能字节复现（工具链/时间戳），所以验的是 git HEAD + clean + config sha + 产物 sha 四件套",
+    "Image sha 钉的是设备实证产物；重新编译后若 sha 变了，必须重新上机验证再更新本账本",
+    "dts/wifi/pcie-pm/core 0001-0003 的补丁按 patches/kernel-build/kernel-patch-manifest.txt 未打，属已知故意缺失"
+  ]
+}

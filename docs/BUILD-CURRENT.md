@@ -102,7 +102,11 @@ rc 无同步 `write …ath11k_pci/bind`、有非阻塞兜底 / `v29_usb_capture.
   脚本对 `vendor.img.pre_c2`（`5a5853c5…`）做原位改写，验文件树与 `dd574c17…` 一致（ext4 superblock 时间戳导致字节必然不同，别拿 sha 当判据）。
 - **系统补丁版**：`build/rebuild_system_patched.sh` 现在把产物写进 `current/parts/system_patched.erofs`（再拷一份到 `work/` 给写盘用），
   不再只留临时目录；脚本末尾会核对 `4011db1d…`。
-- **总闸**：`bash build/patches/verify_all.sh` 一次跑完「账本自证 + 关键 sha 钉死 + 补丁内容在位 + 反向检查」。出包、出 payload、发版前必跑。
+- **总闸**：`bash build/patches/verify_all.sh` 一次跑完五层「账本自证 + 关键 sha 钉死 + 补丁内容在位 + 反向检查 + 内核引导三件套」。出包、出 payload、发版前必跑。
+- **已补（2026-11-26）**：内核/DTB 这一层。以前它只活在构建机的 git 里，现在有账本：
+  `patches/kernel-build/kernel-artifact.json`（HEAD `86450bb7…`、提交数 136、`.config` `900b5a5e…`、`vmlinuz.efi` `db5a1aa1…`、ESP 三件套）、
+  `kernel-files.lock.json`（136 个补丁文件逐个 sha）、`kernel-7.2.9-gaokun3-combined.patch`（基线 `2f6ee52…` 起，874,921 B，实测重放 136/136 一致）。
+  校验 `bash build/patches/verify_kernel.sh`（`REPLAY=1` 时真打一遍）。dtb 用原厂（`e0b63b90…`），dts 24 条按 `kernel-patch-manifest.txt` 故意没打。
 
 
 
