@@ -40,6 +40,7 @@ PARTS = [
 ]
 
 DYNAMIC_GROUP = "gaokun3_dynamic_partitions"
+SNAPSHOT = False  # --snapshot 打开时走 VABC 快照
 
 
 def build_manifest(parts, block_size=BLOCK):
@@ -62,18 +63,31 @@ def build_manifest(parts, block_size=BLOCK):
         op.data_length = size
         data_offset += size
         # 全量 REPLACE 的 data 就是整份镜像，哈希必须给（hash_checks_mandatory）
-        digest = hashlib.sha256(open(path, "rb").read()).digest()
+        h = hashlib.sha256()
+        with open(path, "rb") as src:
+            for chunk in iter(lambda: src.read(8 << 20), b""):
+                h.update(chunk)
+        digest = h.digest()
         op.data_sha256_hash = digest
         info = pu.new_partition_info
         info.size = size
         info.hash = digest
+        if SNAPSHOT:
+            # VABC 要按分区预留 COW 空间；全量 REPLACE 等于整份都要抄一遍
+            pu.estimate_cow_size = size + (1 << 20)
 
-    # 声明目标槽的分区是动态分区（super 里的逻辑分区），否则 update_engine 会
-    # 去 /dev/block/by-name/<name>_b 找块设备，而动态分区根本没有节点。
-    # snapshot/vabc 都关掉：不启用虚拟 A/B 快照，直接写目标槽那一份。
+    # 声明目标分区是动态分区（super 里的逻辑分区），否则 update_engine 会去
+    # /dev/block/by-name/<name>_b 找块设备，而动态分区根本没有节点。
+    # snapshot_enabled 决定走 VABC 快照（写 COW、成功后合并、失败可回滚）还是
+    # 直接写当前槽（in-place，无回滚）。由 --snapshot 控制。
     dpm = m.dynamic_partition_metadata
-    dpm.snapshot_enabled = False
-    dpm.vabc_enabled = False
+    dpm.snapshot_enabled = SNAPSHOT
+    dpm.vabc_enabled = SNAPSHOT and os.environ.get("VABC", "1") == "1"
+    if SNAPSHOT:
+        dpm.cow_version = int(os.environ.get("COW_VER", "2"))  # 设备允许 1..3，缺省 0 会直接被判越界
+        if dpm.vabc_enabled and dpm.cow_version >= 3:
+            dpm.vabc_compression_param = "gz"
+            dpm.compression_factor = 4096  # 0 会被 cow writer 判为非法
     group = dpm.groups.add()
     group.name = DYNAMIC_GROUP
     group.size = sum(size for _, _, size in parts)
@@ -114,7 +128,13 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--version", default="")
     ap.add_argument("--only", default="", help="只打包这些分区（调试用，逗号分隔）")
+    ap.add_argument("--snapshot", action="store_true", help="走 VABC 快照（默认直接写当前槽）")
+    ap.add_argument("--group", default="",
+                    help="dynamic_partition_metadata 里的组名；VABC 必须与设备 lpdump 里的组名逐字相同（带槽后缀）")
     a = ap.parse_args()
+    global SNAPSHOT, DYNAMIC_GROUP
+    SNAPSHOT = a.snapshot
+    DYNAMIC_GROUP = a.group or DYNAMIC_GROUP
 
     wanted = {s.strip() for s in a.only.split(",") if s.strip()} if a.only else None
     entries = []
@@ -173,7 +193,11 @@ def main():
         f.write(sign_digest(h.digest(), a.key))
 
     file_size = os.path.getsize(a.out)
-    file_hash = hashlib.sha256(open(a.out, "rb").read()).digest()
+    fh = hashlib.sha256()
+    with open(a.out, "rb") as src:
+        for chunk in iter(lambda: src.read(8 << 20), b""):
+            fh.update(chunk)
+    file_hash = fh.digest()
     meta_hash = hashlib.sha256(metadata).digest()
 
     # AOSP 的 payload_properties.txt 里哈希是 base64（客户端直接 base64 解码成
@@ -199,6 +223,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
