@@ -29,7 +29,7 @@ LIMIT=1137397760                               # system_a：2,221,480 sectors
 # 与 build/current_build.sh 一致（基座 parts/system.erofs 是早期随机 UUID 的版本，
 # 两者内容已比对为 0 差异，UUID 只影响超级块字节，不影响挂载）
 UUID_SYS=4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f601
-ALLOW="${ALLOW:-system/build.prop system/bin/update_engine}"
+ALLOW="${ALLOW:-system/build.prop system/bin/update_engine system/etc/init/snapuserd.rc}"
 
 for t in "$MKFS" "$FSCK"; do [ -x "$t" ] || { echo "缺工具: $t"; exit 1; }; done
 [ -d "$TREE/system/bin" ] || { echo "树不存在: $TREE/system/bin"; exit 1; }
