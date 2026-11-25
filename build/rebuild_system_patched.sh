@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# 重打 system.erofs（带我们的 OTA 补丁），产出可直接按 extent 写回 system_a 的镜像。
+# 重打 system.erofs（带发布清理 + OTA 补丁），产出可直接按 extent 写回 system_a 的镜像。
 #
-# 树里本阶段有的两处改动：
+# 相对基座 parts/system.erofs 的差异（也就是白名单里的全部）：
 #   1) system/bin/update_engine —— 3 字节 AVB-skip 补丁
-#      （本机没有 system_other 分区/AVB 信息，EraseSystemOtherAvbFooter 必然失败）
-#   2) system/build.prop —— ro.virtual_ab.ublk.enabled=true
-#      （内核没有 CONFIG_DM_USER，只有 CONFIG_BLK_DEV_UBLK；不开这个，引擎会去建 dm-user
-#        设备、等 snapuserd 超时，最后在 FilesystemVerifier 阶段报 kFilesystemVerifierError）
+#      （本机没有 system_other 分区/AVB 信息，EraseSystemOtherAvbFooter 必然失败；
+#        legacy A/B 下这段仍在分区元数据初始化路径上，所以补丁也得留着）
+#   2) system/build.prop —— 删掉 ro.virtual_ab.ublk.enabled / ro.virtual_ab.userspace.snapshots.enabled
+#      （legacy A/B 不用 VABC，让引擎走老路）
+#   3) system/etc/init/snapuserd.rc —— 去掉 snapuserd 的 -ublk 参数、删掉 gk3clean / gk3run 两个自用 service
+#   4) system/etc/init/gk3-logdump.rc、system/etc/gk3-logdump.sh —— 整份删除（往 /metadata 灌转储的调试钩子，
+#      需要时用 device/huawei/gaokun3/debug/ 里的副本加回调试版）
 #
 # 判据：解包基座 parts/system.erofs 得到参照树，与当前树做内容 diff，
 #       差异文件必须全部落在白名单里（ALLOW 正则），否则停 —— 防止顺手带进别的东西。
@@ -34,7 +37,7 @@ LIMIT=1137397760                               # system_a：2,221,480 sectors
 # 与 build/current_build.sh 一致（基座 parts/system.erofs 是早期随机 UUID 的版本，
 # 两者内容已比对为 0 差异，UUID 只影响超级块字节，不影响挂载）
 UUID_SYS=4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f601
-ALLOW="${ALLOW:-system/build.prop system/bin/update_engine system/etc/init/snapuserd.rc}"
+ALLOW="${ALLOW:-system/build.prop system/bin/update_engine system/etc/init/snapuserd.rc system/etc/init/gk3-logdump.rc system/etc/gk3-logdump.sh}"
 
 for t in "$MKFS" "$FSCK"; do [ -x "$t" ] || { echo "缺工具: $t"; exit 1; }; done
 [ -d "$TREE/system/bin" ] || { echo "树不存在: $TREE/system/bin"; exit 1; }
@@ -64,8 +67,11 @@ echo "   通过：只有白名单文件不同"
 echo "== 2. 给 update_engine 打 3 字节补丁"
 python3 "$PATCH_TOOL" "$TREE/system/bin/update_engine"
 
-echo "== 3. 检查 build.prop 的 ublk 门控"
-grep -n 'ro.virtual_ab.ublk.enabled' "$TREE/system/build.prop" || { echo "   !! build.prop 里没有 ro.virtual_ab.ublk.enabled=true"; exit 5; }
+echo "== 3. 检查发布清理是否真的落地"
+if grep -q 'ro.virtual_ab' "$TREE/system/build.prop"; then echo "   !! build.prop 里还有 ro.virtual_ab.*"; exit 5; fi
+if grep -q 'gk3run\|gk3clean' "$TREE/system/etc/init/snapuserd.rc"; then echo "   !! snapuserd.rc 里还有 gk3run / gk3clean"; exit 5; fi
+if [ -e "$TREE/system/etc/init/gk3-logdump.rc" ]; then echo "   !! 调试钩子 gk3-logdump.rc 还在"; exit 5; fi
+echo "   通过：无 virtual_ab 属性、无 root runner / 清理 service、无 /metadata 转储钩子"
 
 echo "== 4. 重打 system.erofs"
 rm -f "$TMP/candidate.erofs"
@@ -85,7 +91,8 @@ if [ ! -f "$TMP/verify/system/bin/update_engine" ]; then
     exit 7
 fi
 echo "   镜像内 update_engine md5: $(md5sum "$TMP/verify/system/bin/update_engine" | cut -d' ' -f1)（应为 dc757f0a91d74cb340310c27fba8d564）"
-echo "   镜像内 build.prop ublk: $(grep -c 'ro.virtual_ab.ublk.enabled=true' "$TMP/verify/system/build.prop") 行"
+echo "   镜像内 build.prop virtual_ab: $(grep -c 'ro.virtual_ab' "$TMP/verify/system/build.prop") 条（应为 0）"
+echo "   镜像内 snapuserd.rc -ublk: $(grep -c 'snapuserd -ublk' "$TMP/verify/system/etc/init/snapuserd.rc") 处（应为 0）"
 
 echo "== 6. 交给 Windows 侧"
 cp "$TMP/candidate.erofs" "$OUT_WIN"

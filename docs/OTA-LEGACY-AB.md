@@ -115,13 +115,18 @@ build <head.bin> <out.bin>  生成 A/B 双槽版本
 ```
 loader.conf: timeout 5 / default *-android-a.conf
 
-476f1043…-android-a.conf   ColorOS 17.0.1 — slot _a   直连：linux=ESP slot_a/Image
-476f1043…-android-b.conf   ColorOS 17.0.1 — slot _b   直连：linux=ESP slot_b/Image
-gk3boot-android-a.conf     title "Android"  gk3.hint=a  走 gk3boot → 读 misc 选槽
-gk3boot-android-b.conf     title "Android"  gk3.hint=b
+476f1043…-android-a.conf   Direct boot (rescue) - slot _a   直连：linux=ESP slot_a/Image
+476f1043…-android-b.conf   Direct boot (rescue) - slot _b   直连：linux=ESP slot_b/Image
+gk3boot-android-a.conf     ColorOS 17 - slot A  gk3.hint=a  走 gk3boot → 读 misc 选槽
+gk3boot-android-b.conf     ColorOS 17 - slot B  gk3.hint=b
 gk3boot-tools.conf         Android fastboot / boot menu
 EFI/Microsoft/Boot         Windows
 ```
+
+（标题在一次轮换后会带后缀：`.staged`/观察模式为 `ColorOS 17 - slot A (observe)`，被替换下来的旧版为
+`ColorOS 17 - slot A (prev loader)`。命名统一在 `installer/backend/src/esp.c`、`Gk3Boot.cpp:EntryText`、
+`gaokun3-ota-postinstall.sh:gk3_entry_text` 三处，测试断言同步在 `installer/backend/test/linux/check_install.py`、
+`tools/gk3boot/test/{hal,postinstall}/run.sh`。2026-11-26 已把这六项在盘上改名完毕。）
 
 - 直连条目把内核/ramdisk/dtb 全写在 ESP 上，`androidboot.slot_suffix` 写死在 options 里
 - gk3boot 条目不指定内核，它自己读 `boot_<x>` 分区 + 追加 `androidboot.slot_suffix`
@@ -170,11 +175,30 @@ cmdline.base(584): …androidboot.selinux=enforcing…
 `misc` 的工具是 `tools/ota/bcab_edit.py`（CRC 用 `zlib.crc32(前 28 字节)`，与 `core/src/util.c:82` 等价，
 已用真机数据验证过 `stored == calc`）。
 
+## 发布清理（2026-11-26 已做）
+
+镜像树 `/home/cenmin/v50-build/system` 相对基座的差异，现在只剩白名单里这几项（`build/rebuild_system_patched.sh` 的 `ALLOW`）：
+
+| 项 | 处理 | 理由 |
+|---|---|---|
+| `system/etc/init/snapuserd.rc` 的 `gk3run` service | 删 | 它就是 root 后门：`setprop ctl.start gk3run` 即以 root 跑 `/data/local/tmp/gk3run.sh`，production build 默认没有 `su`，谁都能借它提权 |
+| 同文件的 `gk3clean` + `on boot start gk3clean` | 删 | 开机清 `/metadata` 的调试卫生，发布版没有转储，不需要 |
+| 同文件 `snapuserd -ublk` 的 `-ublk` | 去掉 | legacy A/B 不用 snapuserd；留着会指向 ublk 后端，与 `CONFIG_DM_USER` 缺失的现状不符 |
+| `system/build.prop` 的 `ro.virtual_ab.ublk.enabled` / `ro.virtual_ab.userspace.snapshots.enabled` | 删 | 两条属性是 VABC 的开关，legacy A/B 必须让引擎走老路 |
+| `system/etc/init/gk3-logdump.rc`、`system/etc/gk3-logdump.sh` | 整份删 | 开机后 20/25/30 秒往 `/metadata` 灌 dmesg/logcat/getprop/ps/SF/window + tombstone，还常驻一个 root service |
+| `system/bin/update_engine` 的 3 字节补丁 | **保留** | 与 VABC 无关：`EraseSystemOtherAvbFooter` 在分区元数据初始化路径上，本机没有 `system_other` 也没有它的 AVB 信息，不打就 `kInstallDeviceOpenError (7)` |
+
+调试需要时，`vendor/gaokun-android/device/huawei/gaokun3/debug/` 里有逐字节副本 + `apply_debug_overlay.sh`
+（幂等，`TREE=` 可指向任意树），叠回后照常重打；发布镜像不带。
+
+校验链：`rebuild_system_patched.sh` 第 3 步现在会硬拦——build.prop 里还有 `ro.virtual_ab.*`、
+snapuserd.rc 里还有 `gk3run`/`gk3clean`、或 `gk3-logdump.rc` 还在，任何一条成立就 `exit 5`。
+
 ## 待办
 
-- 发布镜像清理：`gk3run`（root 后门）、`gk3clean` 的 `/metadata` 清理、`gk3boot` 的 `/metadata` 转储钩子
-- `ro.virtual_ab.*` 两条属性、`snapuserd`/ublk 一条链在 legacy A/B 下应撤（VABC 只留文档）
-- `update_engine` 的 3 字节 AVB 补丁是否还需要（legacy A/B 下重跑一次分槽安装验证）
+- 用清理后的树重打一次 `system.erofs` 并上机验证（当前设备跑的仍是旧镜像，后门还在）
+- `update_engine` 的 3 字节 AVB 补丁在 legacy A/B 下重跑一次分槽安装复核（计划保留）
 - 端到端 OTA：payload 写另一槽 → `bootctl SetActiveSlot` → 重启 → 开机完成 markSuccessful → 失败则回滚
+- `my_engineering_b` 仍是 OPPO 证书，`otacerts.zip` 只进了 `my_engineering_a`，发布流水线要把两边都换成自签
 
 

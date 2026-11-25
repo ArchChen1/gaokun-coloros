@@ -1,0 +1,9 @@
+service gk3-logdump /system/bin/sh /system/etc/gk3-logdump.sh
+    class main
+    user root
+    group root system log shell
+    oneshot
+    disabled
+
+on post-fs-data
+    start gk3-logdump

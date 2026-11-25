@@ -1,0 +1,22 @@
+# 加到 system/etc/init/snapuserd.rc 末尾（调试版专用）。
+# 脚本放 /data/local/tmp/gk3run.sh，然后 adb shell setprop ctl.start gk3run。
+#
+# 两条纪律：
+#   1) 推到设备后先 `tr -d "\r"`，否则 sh 报 "$'\r': not found"；
+#   2) 脚本末尾必须 `chmod 644` 自己写出的产物，否则 shell（uid 2000）读不到。
+
+service gk3run /system/bin/sh /data/local/tmp/gk3run.sh
+    user root
+    group root system
+    oneshot
+    disabled
+
+# /metadata 只给 root 用，调试期间顺手清掉上一轮的转储（发布版没有这段，靠手动删）
+service gk3clean /system/bin/sh -c "rm -f /metadata/gk3-* /metadata/tombstone_* /metadata/anr_*; rm -rf /metadata/gk3-debug/*"
+    user root
+    group root system
+    oneshot
+    disabled
+
+on boot
+    start gk3clean
