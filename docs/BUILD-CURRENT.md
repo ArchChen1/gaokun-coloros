@@ -94,11 +94,16 @@ rc 无同步 `write …ath11k_pci/bind`、有非阻塞兜底 / `v29_usb_capture.
 
 ## 待补齐的产物（当前缺口）
 
-- `my_engineering` 的证书版（`ce71e4b6…`）：设备上有，产物没有。需要一条 `build/patches/*.sh`
-  从 `v49/src/my_engineering_a.img` 派生并校验，否则发布包会把 OPPO 原证书带出去。
-- vendor 的 C2 补丁（`dd574c17…`）：只有产物，没有可复跑的脚本（`v52/ca5ba84b…` → C2 这一段）。
-- system 的补丁版（`4011db1d…`）：由 `build/rebuild_system_patched.sh` 从 v50 树重打，产物应固定落到
-  `current/parts/system.erofs`，而不是 `work/`。
+- **已补**：`my_engineering` 证书版 → `build/patches/p_my_engineering_otacerts.sh`
+  （v49 donor 的 EROFS 解包 → 换 `.secrets/payload/otacerts.zip`（`e98d97cb…`）→ `mkfs.erofs -zlz4 -b4096 -C65536 -U F5FBEAE9…`）。
+  EROFS 重建做不到字节一致，脚本验的是**文件树与账本产物一致**，并额外核对 otacerts.zip 的 sha。
+- **已补**：vendor C2 补丁 → `build/patches/p_vendor_c2.sh`。全部改动只有一处：
+  `etc/init/android.hardware.media.c2-service-v4l2.rc` 里 `disabled` → `interface aidl android.hardware.media.c2.IComponentStore/default`（否则没有东西会拉起 C2 HAL）。
+  脚本对 `vendor.img.pre_c2`（`5a5853c5…`）做原位改写，验文件树与 `dd574c17…` 一致（ext4 superblock 时间戳导致字节必然不同，别拿 sha 当判据）。
+- **系统补丁版**：`build/rebuild_system_patched.sh` 现在把产物写进 `current/parts/system_patched.erofs`（再拷一份到 `work/` 给写盘用），
+  不再只留临时目录；脚本末尾会核对 `4011db1d…`。
+- **总闸**：`bash build/patches/verify_all.sh` 一次跑完「账本自证 + 关键 sha 钉死 + 补丁内容在位 + 反向检查」。出包、出 payload、发版前必跑。
+
 
 
 ## 最新出包（current）

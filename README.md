@@ -62,6 +62,10 @@ sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pa
 10. **`vNN` 不是版本号**：`v52` 只有 `my_product` / `my_stock` / `vendor` 三个分区，它是**补丁层**不是「全套」；
     版本只有一个说法，就是 `manifest.json`。
 11. **改分区 = 改账本**：动过哪个分区，就更新 `manifest.json` 的 sha，并在 `docs/BUILD-CURRENT.md` 事故台账记一行。
+12. **新补丁不写脚本不许上机**：任何对分区的改动，先落成 `build/patches/p_*.sh`（自带「输入 sha 白名单 + 输出内容核对」），
+    跑通 `bash build/patches/verify_all.sh` 再出包。没有脚本的补丁 = 下次必丢。
+13. **验内容不验字节**：ext4/EROFS 重建做不到字节一致（superblock 时间戳、mkfs 版本），所以脚本核对的是文件树；
+    账本里的 sha 是**设备实证产物**的 sha，别用重建产物去覆盖它。
 
 ## 当前状态（2026-11-26）
 

@@ -32,7 +32,8 @@ MKFS=/home/cenmin/toolchain/erofs-install/bin/mkfs.erofs
 FSCK=/home/cenmin/toolchain/erofs-install/bin/fsck.erofs
 PATCH_TOOL=/mnt/e/gk3-coloros/tools/ota/patch_update_engine_avb.py
 TMP=/home/cenmin/sys_rebuild
-OUT_WIN=/mnt/e/gk3-coloros/work/system_patched.erofs
+OUT_PROD=/home/cenmin/coloros-build/current/parts/system_patched.erofs   # 账本产物落这里
+OUT_WIN=/mnt/e/gk3-coloros/work/system_patched.erofs                     # Windows 侧写盘用的副本
 LIMIT=1137397760                               # system_a：2,221,480 sectors
 # 与 build/current_build.sh 一致（基座 parts/system.erofs 是早期随机 UUID 的版本，
 # 两者内容已比对为 0 差异，UUID 只影响超级块字节，不影响挂载）
@@ -94,8 +95,10 @@ echo "   镜像内 update_engine md5: $(md5sum "$TMP/verify/system/bin/update_en
 echo "   镜像内 build.prop virtual_ab: $(grep -c 'ro.virtual_ab' "$TMP/verify/system/build.prop") 条（应为 0）"
 echo "   镜像内 snapuserd.rc -ublk: $(grep -c 'snapuserd -ublk' "$TMP/verify/system/etc/init/snapuserd.rc") 处（应为 0）"
 
-echo "== 6. 交给 Windows 侧"
-cp "$TMP/candidate.erofs" "$OUT_WIN"
-ls -l "$OUT_WIN"
-sha256sum "$OUT_WIN"
+echo "== 6. 落盘"
+cp "$TMP/candidate.erofs" "$OUT_PROD"
+cp "$OUT_PROD" "$OUT_WIN"
+ls -l "$OUT_PROD" "$OUT_WIN"
+sha256sum "$OUT_PROD" "$OUT_WIN"
+echo "   期望 sha 4011db1d…（与设备两槽同源）；不等就说明补丁没全打上"
 echo "== 完成。接下来由主程序按 system_a 的 extent（super 内 sector 2048）原位写回。"
