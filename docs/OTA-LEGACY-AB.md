@@ -110,3 +110,71 @@ build <head.bin> <out.bin>  生成 A/B 双槽版本
 - 启动后 BCAB：`slot_b pri=15 tries=1 ok=1`、`slot_a pri=14 tries=1 ok=1`
   ⇒ `gk3boot` 扣 tries 与 Android `markBootSuccessful` 都正常工作
 
+## 引导条目拓扑（ESP 上 6 项）
+
+```
+loader.conf: timeout 5 / default *-android-a.conf
+
+476f1043…-android-a.conf   ColorOS 17.0.1 — slot _a   直连：linux=ESP slot_a/Image
+476f1043…-android-b.conf   ColorOS 17.0.1 — slot _b   直连：linux=ESP slot_b/Image
+gk3boot-android-a.conf     title "Android"  gk3.hint=a  走 gk3boot → 读 misc 选槽
+gk3boot-android-b.conf     title "Android"  gk3.hint=b
+gk3boot-tools.conf         Android fastboot / boot menu
+EFI/Microsoft/Boot         Windows
+```
+
+- 直连条目把内核/ramdisk/dtb 全写在 ESP 上，`androidboot.slot_suffix` 写死在 options 里
+- gk3boot 条目不指定内核，它自己读 `boot_<x>` 分区 + 追加 `androidboot.slot_suffix`
+- `gk3.hint` 只在 BCAB 无效时生效（`gk3boot.c:41`、`core/src/bcab.c:174-177`）；
+  BCAB 有效时按 priority 挑「可启动」的槽，`gk3.fbtcp`/`gk3.slot` 是另一套（测试用强制槽）
+
+## 真机踩到的坑：boot 分区里是失效镜像
+
+现象：选 gk3boot 条目（无论 hint a/b）→ 起几秒自动重启；选直连条目正常。
+
+日志（`EFI/gk3boot/log/boot-13.txt`）给出了完整链条：
+
+```
+bcab: valid  _a=14/1/ok  _b=15/0/unbootable
+decision: boot slot=_a active=_b fallback=1
+boot_a: p8 v2 kernel=18743808 ramdisk=13468543 dtb=174904 id=f768786d…
+cmdline.base(584): …androidboot.selinux=enforcing…
+```
+
+- 选槽逻辑没错：B 不可启动 → 正确回落 A 并记 `fallback`
+- 但回落用的 `boot_a` 里是 11-24 的旧 boot v2 镜像（kernel 18,743,808 / ramdisk 13,468,543），
+  和 ESP `slot_a` 那份（Image 16,134,656 / ramdisk 13,145,568，sha `db5a1aa1…` / `9cbc5339…`）不是一套
+- 旧镜像 cmdline 是 `androidboot.selinux=enforcing`，本系统在 enforcing 下起不来 ⇒ 秒级自重启
+
+修法：用 ESP 三件套重打 boot v2 镜像写进 `boot_a`/`boot_b`，让两条路径启动同一个内核。
+
+### 打包工具 `tools/ota/bootimg_v2.py`
+
+- id 规则（`core/src/bootimg.c:10`、`:85-100`）：
+  `id[0:20] = SHA1(kernel‖le32(kernel_size), ramdisk‖le32(ramdisk_size),
+   second‖le32(second_size), [recovery_dtbo‖le32(len)], [dtb‖le32(len))])`
+  —— 每段后面连一个 4 字节 LE 长度，不是裸拼。用原 boot_a 复算，id 完全对上（`f768786d…`）
+- base cmdline 拼接（`core/src/cmdline.c:92-102`）：`cmdline[512] + extra_cmdline[1024]` **直接相连**，
+  所以超过 512 字节的部分要放进 `extra_cmdline`，不能截断
+- 其它字段按原镜像抄：page 2048、v2、header_size 1660、os_version `0x220001aa`、
+  kernel/ramdisk/tags/dtb 地址、`selinux=permissive` 的 596 字符 cmdline
+- 产物 `work/boot_ab.img` 29,460,480 B，sha `0dae44bb…`，写入 `boot_a`/`boot_b` 后回读 sha 一致
+
+### 两个方向的验证
+
+| 场景 | BCAB | 结果 |
+|------|------|------|
+| 回滚（B 不可启动） | `a:14/1/1` `b:15/0/0` | `slot=_a`、`event=fallback`、`selinux=permissive`、开机完成 |
+| 正常切槽 | `a:14/1/1` `b:15/7/0` | `slot=_b`、`event=none`、开机完成，misc 变 `b:15/1/1` |
+
+`misc` 的工具是 `tools/ota/bcab_edit.py`（CRC 用 `zlib.crc32(前 28 字节)`，与 `core/src/util.c:82` 等价，
+已用真机数据验证过 `stored == calc`）。
+
+## 待办
+
+- 发布镜像清理：`gk3run`（root 后门）、`gk3clean` 的 `/metadata` 清理、`gk3boot` 的 `/metadata` 转储钩子
+- `ro.virtual_ab.*` 两条属性、`snapuserd`/ublk 一条链在 legacy A/B 下应撤（VABC 只留文档）
+- `update_engine` 的 3 字节 AVB 补丁是否还需要（legacy A/B 下重跑一次分槽安装验证）
+- 端到端 OTA：payload 写另一槽 → `bootctl SetActiveSlot` → 重启 → 开机完成 markSuccessful → 失败则回滚
+
+
