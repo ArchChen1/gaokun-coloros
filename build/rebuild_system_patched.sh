@@ -18,6 +18,11 @@
 
 set -euo pipefail
 
+# 单实例锁：两次同时往 candidate.erofs 写会得到坏镜像（根 inode 被清零，
+# fsck 报 "bogus i_mode (0) @ nid 128"，而 --extract 依然返回 0）
+exec 9>/tmp/gk3-rebuild-system.lock
+flock -n 9 || { echo "已有另一个重打在跑，退出"; exit 9; }
+
 TREE=/home/cenmin/v50-build/system            # 里面有 system/ 子目录，就是 mkfs 的目标根
 PARTS=/home/cenmin/coloros-build/current/parts
 MKFS=/home/cenmin/toolchain/erofs-install/bin/mkfs.erofs
@@ -63,16 +68,22 @@ echo "== 3. 检查 build.prop 的 ublk 门控"
 grep -n 'ro.virtual_ab.ublk.enabled' "$TREE/system/build.prop" || { echo "   !! build.prop 里没有 ro.virtual_ab.ublk.enabled=true"; exit 5; }
 
 echo "== 4. 重打 system.erofs"
+rm -f "$TMP/candidate.erofs"
 "$MKFS" -zlz4 -b4096 -C65536 -L system -U "$UUID_SYS" "$TMP/candidate.erofs" "$TREE" >/dev/null
 SZ=$(stat -c%s "$TMP/candidate.erofs")
 echo "   大小 $SZ B（分区 $LIMIT B）"
 if [ "$SZ" -gt "$LIMIT" ]; then echo "   !! 超过分区大小，停。"; exit 4; fi
 truncate -s "$LIMIT" "$TMP/candidate.erofs"
 
-echo "== 5. 校验"
-"$FSCK" "$TMP/candidate.erofs" >/dev/null && echo "   fsck clean"
+echo "== 5. 校验（fsck 对损坏镜像可能仍返回 0，所以必须显式检查解包结果）"
+"$FSCK" "$TMP/candidate.erofs" >/dev/null 2>&1 || { echo "   !! fsck 报错，停"; exit 6; }
+echo "   fsck clean"
 rm -rf "$TMP/verify"
-"$FSCK" --extract="$TMP/verify" "$TMP/candidate.erofs" >/dev/null
+"$FSCK" --extract="$TMP/verify" "$TMP/candidate.erofs" >/dev/null 2>&1 || true
+if [ ! -f "$TMP/verify/system/bin/update_engine" ]; then
+    echo "   !! 解包失败/不完整（常见原因：同时跑了两次打包，镜像被写坏），重跑一次"
+    exit 7
+fi
 echo "   镜像内 update_engine md5: $(md5sum "$TMP/verify/system/bin/update_engine" | cut -d' ' -f1)（应为 dc757f0a91d74cb340310c27fba8d564）"
 echo "   镜像内 build.prop ublk: $(grep -c 'ro.virtual_ab.ublk.enabled=true' "$TMP/verify/system/build.prop") 行"
 
