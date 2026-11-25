@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# 重打 system.erofs：给 /system/bin/update_engine 打 3 字节 AVB-skip 补丁后再打包。
+# 重打 system.erofs（带我们的 OTA 补丁），产出可直接按 extent 写回 system_a 的镜像。
 #
-# 为什么要打：本机没有 system_other 分区/AVB 信息，update_engine 在
-# EraseSystemOtherAvbFooter() 必然失败，OTA 连下载阶段都过不去（kInstallDeviceOpenError 7）。
-# 补丁把该函数入口的判断改成无条件成功，详见 tools/ota/patch_update_engine_avb.py。
+# 树里本阶段有的两处改动：
+#   1) system/bin/update_engine —— 3 字节 AVB-skip 补丁
+#      （本机没有 system_other 分区/AVB 信息，EraseSystemOtherAvbFooter 必然失败）
+#   2) system/build.prop —— ro.virtual_ab.ublk.enabled=true
+#      （内核没有 CONFIG_DM_USER，只有 CONFIG_BLK_DEV_UBLK；不开这个，引擎会去建 dm-user
+#        设备、等 snapuserd 超时，最后在 FilesystemVerifier 阶段报 kFilesystemVerifierError）
 #
-# 安全性：只读解包树、写 $HOME 与 /mnt/e 下的镜像文件，不打开任何块设备。
+# 判据：解包基座 parts/system.erofs 得到参照树，与当前树做内容 diff，
+#       差异文件必须全部落在白名单里（ALLOW 正则），否则停 —— 防止顺手带进别的东西。
 #
-# 用法（WSL，root 或普通用户都行；树是 root 所有的，用 root 更稳）：
-#   wsl -u root -d Ubuntu-24.04 -- bash /mnt/e/gk3-coloros/work/rebuild_system_patched.sh
+# 安全性：只读树、只写 $HOME 与 /mnt/e 下的镜像文件，不打开任何块设备。
+#
+# 用法：
+#   wsl -u root -d Ubuntu-24.04 -- bash /mnt/e/gk3-coloros/build/rebuild_system_patched.sh
 
 set -euo pipefail
 
@@ -23,7 +29,7 @@ LIMIT=1137397760                               # system_a：2,221,480 sectors
 # 与 build/current_build.sh 一致（基座 parts/system.erofs 是早期随机 UUID 的版本，
 # 两者内容已比对为 0 差异，UUID 只影响超级块字节，不影响挂载）
 UUID_SYS=4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f601
-SB_END=1280                                    # 超级块区（1024..1280）内允许有差异
+ALLOW="${ALLOW:-system/build.prop system/bin/update_engine}"
 
 for t in "$MKFS" "$FSCK"; do [ -x "$t" ] || { echo "缺工具: $t"; exit 1; }; done
 [ -d "$TREE/system/bin" ] || { echo "树不存在: $TREE/system/bin"; exit 1; }
@@ -31,38 +37,46 @@ for t in "$MKFS" "$FSCK"; do [ -x "$t" ] || { echo "缺工具: $t"; exit 1; }; d
 
 mkdir -p "$TMP"
 
-echo "== 1. 金丝雀：用当前树原样重打，与基座比对（只允许超级块内差异）"
-"$MKFS" -zlz4 -b4096 -C65536 -L system -U "$UUID_SYS" "$TMP/canary.erofs" "$TREE" >/dev/null
-echo "   重打: $(stat -c%s "$TMP/canary.erofs") B  基座: $(stat -c%s "$PARTS/system.erofs") B"
-# 用 cmp -l 列出所有不同字节；超级块里的 build_time/checksum 必然不同（每次打包写当前时间）
-cmp -l "$TMP/canary.erofs" "$PARTS/system.erofs" > "$TMP/cmp.txt" || true
-BAD=$(awk -v lim="$SB_END" '$1 > lim' "$TMP/cmp.txt" | wc -l)
-echo "   不同字节 $(wc -l < "$TMP/cmp.txt") 个，其中超级块之外 $BAD 个"
-if [ "$BAD" -ne 0 ]; then
-    echo "   !! 超级块之外有差异（树相对基座内容漂移），先别写盘。样本："
-    awk -v lim="$SB_END" '$1 > lim' "$TMP/cmp.txt" | head -10
+echo "== 1. 内容判据：解包基座，与当前树比对（只允许白名单文件不同）"
+if [ ! -f "$TMP/ex_base/system/bin/update_engine" ]; then
+    echo "   解包基座（首次，约 1.6 GB）"
+    rm -rf "$TMP/ex_base"
+    "$FSCK" --extract="$TMP/ex_base" "$PARTS/system.erofs" >/dev/null
+fi
+diff -rq --no-dereference "$TMP/ex_base" "$TREE" > "$TMP/contentdiff.txt" 2>&1 || true
+PAT=""
+for f in $ALLOW; do PAT="${PAT:+$PAT|}$f"; done
+UNEXPECTED=$(grep -v -E "($PAT)" "$TMP/contentdiff.txt" || true)
+echo "   差异条目 $(wc -l < "$TMP/contentdiff.txt") 条："
+sed 's/^/     /' "$TMP/contentdiff.txt" | head -20
+if [ -n "$UNEXPECTED" ]; then
+    echo "   !! 白名单外还有差异，先别写盘："
+    echo "$UNEXPECTED" | sed 's/^/     /'
     exit 3
 fi
-echo "   通过：树内容与基座一致，仅超级块时间戳不同"
+echo "   通过：只有白名单文件不同"
 
 echo "== 2. 给 update_engine 打 3 字节补丁"
 python3 "$PATCH_TOOL" "$TREE/system/bin/update_engine"
 
-echo "== 3. 重打 system.erofs"
+echo "== 3. 检查 build.prop 的 ublk 门控"
+grep -n 'ro.virtual_ab.ublk.enabled' "$TREE/system/build.prop" || { echo "   !! build.prop 里没有 ro.virtual_ab.ublk.enabled=true"; exit 5; }
+
+echo "== 4. 重打 system.erofs"
 "$MKFS" -zlz4 -b4096 -C65536 -L system -U "$UUID_SYS" "$TMP/candidate.erofs" "$TREE" >/dev/null
 SZ=$(stat -c%s "$TMP/candidate.erofs")
 echo "   大小 $SZ B（分区 $LIMIT B）"
 if [ "$SZ" -gt "$LIMIT" ]; then echo "   !! 超过分区大小，停。"; exit 4; fi
 truncate -s "$LIMIT" "$TMP/candidate.erofs"
 
-echo "== 4. 校验"
+echo "== 5. 校验"
 "$FSCK" "$TMP/candidate.erofs" >/dev/null && echo "   fsck clean"
 rm -rf "$TMP/verify"
 "$FSCK" --extract="$TMP/verify" "$TMP/candidate.erofs" >/dev/null
 echo "   镜像内 update_engine md5: $(md5sum "$TMP/verify/system/bin/update_engine" | cut -d' ' -f1)（应为 dc757f0a91d74cb340310c27fba8d564）"
-echo "   镜像内 otacerts.zip  sha: $(sha256sum "$TMP/verify/system/etc/security/otacerts.zip" 2>/dev/null | cut -d' ' -f1)"
+echo "   镜像内 build.prop ublk: $(grep -c 'ro.virtual_ab.ublk.enabled=true' "$TMP/verify/system/build.prop") 行"
 
-echo "== 5. 交给 Windows 侧"
+echo "== 6. 交给 Windows 侧"
 cp "$TMP/candidate.erofs" "$OUT_WIN"
 ls -l "$OUT_WIN"
 sha256sum "$OUT_WIN"
