@@ -308,7 +308,41 @@ BCAB 回写：slot_a pri=15 tries=1 ok=1  ← 6 → 1，markSuccessful 生效
 
 ## 待办
 
-- 进 A 槽读一次 BCAB，确认 `markSuccessful` 是否生效（`b:15/1/1`）
+- ~~进 A 槽读 BCAB，确认 `markSuccessful` 是否生效~~ → 已确认 `b:15/1/1`（见上一节）
 - `update_engine` 的 3 字节 AVB 补丁在 legacy A/B 下重跑一次分槽安装复核（计划保留）
 - `my_engineering_b` 的自签证书这次已验证（实测 `ce71e4b6…`，与账本一致）；A 槽仍是旧版，等 A 也升级时一并统一
 - 原厂「软件更新」UI 复刻 + App 端 `applyPayload` 还没接；当前 OTA 仍是 `update_engine_client` 手动跑
+
+## 复核：`markSuccessful` 与「怎么进 A 槽」— 2026-11-26 04:05–04:12
+
+发布版上机后 B 槽没有 root，`misc` 对 shell 不可读，所以 BCAB 的真值只能进 A 槽读一次。过程与结论：
+
+**菜单里的 `ColorOS 17 - slot A` 不强制槽位。** 它是"走 BCAB 决策"的条目：选中它，gk3boot 照常读 misc，
+BCAB 指向 B（`b:15/6/0`）就照样起 B。实测：选它重启后 `slot_suffix=_b`、`ro.boot.gk3boot.event=none`、
+`snapuserd.rc` 里 `gk3run` 计数 0。
+要强制进 A，必须用 **`Direct boot (rescue) - slot _a`**——那是纯 systemd-boot 条目，
+options 里直接写 `androidboot.slot_suffix=_a`，从 ESP 的 `slot_a/Image` 起，不经 gk3boot 决策。
+选中后 `ro.boot.gk3boot.event` 为空、`slot_suffix=_a`、`gk3run` 计数 1。
+
+进 A 后读 misc（root 通道 `setprop ctl.start gk3run`），BCAB 演进：
+
+| 时点 | slot_a | slot_b | crc |
+|---|---|---|---|
+| OTA 装完、重启前 | pri14 tries1 ok1 | pri15 **tries6 ok0** | `9f7922a9` |
+| 重启进 B 之后（A 里读到的真值） | pri14 tries1 ok1 | pri15 **tries1 ok1** | `f6657e0e` |
+
+⇒ **`markSuccessful` 在 legacy A/B + 我们的 boot_control HAL 下确实生效**：`tries 6→1`、`ok 0→1`。
+（原先准备的 `work/misc_to_b.bin`（`a:14/1/1`、`b:15/1/1`）与设备实际状态逐字节一致，纯属巧合，
+说明手工算出来的目标状态就是引擎自己会写的那一份 —— 这张图留着当"手工修复用"的备用件。）
+
+随后直接 reboot（不改 misc）→ `slot_suffix=_b`、`boot_completed=1`、`event=none`、
+`gk3run` 0、`gk3-logdump.rc` 不存在、`ro.virtual_ab.*` 为空。也就是说：**默认启动已经回到发布版 B 槽**。
+
+留档：`work/misc_before_release_ota.bin`（装完未重启）、`work/misc_after_release_boot_b.bin`（B 成功启动后）。
+
+## 当前双槽状态（发布用）
+
+| 槽 | 内容 | 用途 | 怎么进 |
+|---|---|---|---|
+| B | 发布版 system `185b4991…`（无 root 通道、无 VABC 属性、无 logdump） | 日常/发布 | 默认（BCAB 实体化后 b pri15 ok1） |
+| A | 调试版 system `4011db1d…`（`gk3run` 在、VABC 属性在） | root 调试通道 | gk3boot 菜单 `Direct boot (rescue) - slot _a` |

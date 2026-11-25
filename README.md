@@ -87,7 +87,8 @@ sudo make deps && make fetch && make verify && make parts VERSION=v54 && make pa
 - 补丁已全部脚本化并可自证：`build/patches/{p_vendor_c2.sh,p_my_engineering_otacerts.sh,verify_all.sh}` +
   `verify_kernel.sh` 一条命令跑五层（分区账本 / 关键 sha / 补丁内容含发布清理 / 反向检查 / 内核引导三件套），
   当前 `VERIFY_ALL_PASSED`。
-- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、BCAB 的 `markSuccessful` 复核（需进 rooted 槽读 misc）、
-  A 槽也升级到发布版（会失去 root 通道，需先决定调试手段）。
+- 未完成：原厂「软件更新」UI 复刻、App 端 `applyPayload`、A 槽也升级到发布版（会失去 root 通道，需先决定调试手段）。
+  已核实：`markSuccessful` 在 legacy A/B 下生效（BCAB `b` 由 `tries6/ok0` 变 `tries1/ok1`），默认启动回发布版 B。
+  进 A 槽必须用 gk3boot 的 `Direct boot (rescue) - slot _a`；菜单里的 `ColorOS 17 - slot A` 是走 BCAB 的条目，不强制槽位。
 
 详见 `docs/ARCHITECTURE.md`、`docs/BUILD-CURRENT.md`、`docs/INCIDENTS.md`。
