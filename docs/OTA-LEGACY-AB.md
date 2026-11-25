@@ -68,3 +68,45 @@ build <head.bin> <out.bin>  生成 A/B 双槽版本
 - 切槽验证：`update_engine_client --oplus_switch_slot` → 重启进 B → 回滚 A。
 - 发布镜像需删除：`gk3run`（root 后门）、`gk3clean` 的清理动作、`gk3boot` 的 `/metadata`
   转储钩子；`update_engine` 的 3 字节 AVB 补丁在 legacy A/B 下待验证是否还需要。
+
+## 真机验证记录（2026-11-26）
+
+### 元数据写回
+
+- 写前备份 `super` 头 1 MiB：sha256 `2e8de985…`（原始布局唯一凭证）
+- 写入 `super_head_ab.bin`（sha `aa3e25d9…`），回读 sha 一致
+- 写后 `lpdump` 读真盘：`Header flags: none`、元数据 2440 B、26 个分区、3 个组；
+  A 槽 13 条 extents 与写前逐条一致
+- 重启后 A 槽正常启动（`sys.boot_completed=1`、`slot_suffix=_a`），
+  init 一次建立 26 个 dm-linear（13 个 `_a` + 13 个 `_b`）
+
+### B 槽内容
+
+- dm 设备由分区 `readonly` 属性建成只读，**不能**用 `dd` 写 `mapper/*_b`
+  （`write error: Operation not permitted`）；必须直接写 `super` 块设备的 B extent
+- A、B 两套布局的间隙完全同形（B = A 平移 19,658,752 扇区），可整段一次拷：
+  `dd if=super of=super bs=1M skip=1 seek=9600 count=9598` + 尾部 1856 扇区补 512 B
+- 10,064,232,448 B / 24 s（约 394 MB/s）
+- 校验：13 个分区 `mapper/*_a` 与 `*_b` 整盘 sha256 全部一致
+
+### 引导与切槽
+
+- `boot_b` 从 `boot_a` 复制，sha `3e39ac63…` 双方一致
+- ESP `476f1043…/android/slot_b/` 原为 11-24 的旧内核（18.7 MB），已对齐成
+  `slot_a` 那份（Image sha `db5a1aa1…`、ramdisk sha `9cbc5339…`），原件备份在
+  `/data/local/tmp/esp_slot_b_bak/`
+- ESP 已存在 `slot_b` 目录 ⇒ 切槽不需要动 ESP 结构，只要槽内内容与 misc 状态对
+- `update_engine_client --oplus_switch_slot` **不会**切槽：只把当前槽 `tries` 5→6；
+  `--switch_slot=true` 需要 `/data/ota_package/metadata`，不是纯切槽入口
+- 实际选槽由 `gk3boot` 按 misc BCAB 的 priority 决定（`core/src/bcab.c`
+  `gk3_select_slot`），菜单手选只在 BCAB 无效时作为 hint
+- 写盘前实测 BCAB 就是「B 槽 priority 15 / tries 5 / 未成功，A 槽 priority 14 / 已成功」，
+  即出厂早把 B 标成下一个启动槽，只是 B 一直没内容 ⇒ 不需要改 misc 就能切到 B
+
+### B 槽启动（通过）
+
+- 菜单选 slot b 重启：`ro.boot.slot_suffix=_b`、`sys.boot_completed=1`
+- 挂载全部来自 `dm-14…dm-25`（`_b` 设备），`system_a`/`system_b` sha 均为 `4011db1d…`
+- 启动后 BCAB：`slot_b pri=15 tries=1 ok=1`、`slot_a pri=14 tries=1 ok=1`
+  ⇒ `gk3boot` 扣 tries 与 Android `markBootSuccessful` 都正常工作
+
