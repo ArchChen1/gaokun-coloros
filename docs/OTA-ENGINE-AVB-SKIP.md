@@ -41,7 +41,7 @@ kInstallDeviceOpenError (7)
 
 ## 打回镜像的流程
 
-1. `work/rebuild_system_patched.sh`（WSL，需要 `wsl -u root`，mkfs.erofs 在开发机上被硬拦截，只能本地跑）
+1. `build/rebuild_system_patched.sh`（WSL，需要 `wsl -u root`，mkfs.erofs 在开发机上被硬拦截，只能本地跑）
 2. 金丝雀：先用当前树原样重打，与 `parts/system.erofs` 逐字节 `cmp`；**只允许**超级块区（偏移 ≤ 1280）有差异（`build_time` 每次都会变，校验和随它变，UUID 早期是随机生成的）。超级块之外有任何差异 → 停。
 3. 打补丁 → 重打 → 截齐到分区长度 → `fsck.erofs` clean → 再解包校验镜像内 `update_engine` 的 md5 是 `dc757f0a…`。
 4. `tools/raw_extent_write.ps1 -Sector 2048 -Bytes 1137397760` 原位写回 `system_a`（先 dry run 备份并比对备份 sha 与基座一致，再 `-Write`，写完按 1 MB 分块回读比对）。
