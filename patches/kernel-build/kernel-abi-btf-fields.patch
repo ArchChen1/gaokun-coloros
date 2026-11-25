@@ -1,0 +1,30 @@
+From 38de7fa30fe1357f724ee79b3bf6a768d72c4004 Mon Sep 17 00:00:00 2001
+From: builder <builder@localhost>
+Date: Wed, 25 Nov 2026 12:51:44 +0800
+Subject: [PATCH] module: keep BTF module fields unconditional for stock module
+ ABI
+
+---
+ include/linux/module.h | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/include/linux/module.h b/include/linux/module.h
+index 7566815..3314322 100644
+--- a/include/linux/module.h
++++ b/include/linux/module.h
+@@ -501,12 +501,10 @@ struct module {
+ 	unsigned int num_bpf_raw_events;
+ 	struct bpf_raw_event_map *bpf_raw_events;
+ #endif
+-#ifdef CONFIG_DEBUG_INFO_BTF_MODULES
+ 	unsigned int btf_data_size;
+ 	unsigned int btf_base_data_size;
+ 	void *btf_data;
+ 	void *btf_base_data;
+-#endif
+ #ifdef CONFIG_JUMP_LABEL
+ 	struct jump_entry *jump_entries;
+ 	unsigned int num_jump_entries;
+-- 
+2.43.0
+

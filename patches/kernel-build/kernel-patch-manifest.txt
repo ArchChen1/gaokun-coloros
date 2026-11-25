@@ -1,0 +1,45 @@
+# ColorOS 移植内核的补丁清单（gaokun-src/patches/kernel 之后这一层）
+#
+# 基线：mainline v7.2.9 stable + KawaiiHachimi/linux-gaokun-buildbot 的构建层
+#      （buildbot 那一层怎么打、踩过哪些冲突，见 docs/KERNEL-BUILD.md）
+#
+# 语法：
+#   + <glob>   打上（相对 gaokun-src/patches/kernel 的路径，按文件名排序）
+#   - <glob>   不打（必须写在对应 + 之后才能生效）
+#   #          注释
+#
+# 语义是"我们实际打上的集合"，不是"上游建议的集合"。少打的部分和原因见文末注释。
+
++ drm/*
++ core/0006-*
++ fingerprint/*
++ ec-usb/0011-*
++ ec-usb/0012-*
++ core/0004-*
++ core/0005-*
++ core/0007-*
++ core/0008-*
++ core/0009-*
++ input/*
++ audio/*
++ iommu/*
++ camera/*
+- camera/0005-*
+- camera/0008-*
++ iris/*
+
+# 没打、且短期内也不打算打的：
+#
+#   dts/*            24 条全部打不上。这批补丁改的是 sc8280xp-huawei-gaokun3-camera.dtsi
+#                    这类拆分后的文件，7.2.9 的树里 gaokun3 还是单文件
+#                    sc8280xp-huawei-gaokun3.dts，那个 dtsi 不存在。要打这批，
+#                    得先把内核升到已经拆分 dtb 的上游（7.3/7.4），或者手工移植。
+#                    既然我们只换 ESP 里的 Image、dtb 用原厂，这批先搁置。
+#   wifi/*           27 条是 ath11k 的。这台机器上 WiFi 跑的是高通 qcacld 那一支，
+#                    与 ath11k 无关，对 ColorOS 这套 userspace 没有收益。
+#   pcie-pm/*        12 条是深度待机/NVMe 恢复的健壮性打磨，属第三批长尾，暂缓。
+#   core/0001-0003   EFI pstore 后端、bpffs 延迟打标签、remoteproc 限流，
+#                    与开机/功能无关，暂缓。
+#
+#   camera/0005 与 0008 两条打不上：它们改的 hi846.c 比 7.2.9 里的新，上下文对不上，
+#   补丁又没有 index blob 信息，三方合并也做不了。影响面只在前摄的曝光元数据精度。
