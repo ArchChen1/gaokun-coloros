@@ -112,6 +112,7 @@ try {
         # line: Windows PowerShell 5.1 rejects a line break inside ::new( ... ).
         $ifs2 = [System.IO.FileStream]::new($src, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read, 1048576)
         if ($null -eq $ifs2) { throw "cannot reopen image for readback: $src" }
+        $shaR = [System.Security.Cryptography.SHA256]::Create()
         $off = [UInt64]0
         $bad = 0
         while ($off -lt $Bytes) {
@@ -120,12 +121,17 @@ try {
             $b = New-Object byte[] ([int]$len)
             $n = $ifs2.Read($b, 0, [int]$len)
             if ($n -ne $len) { throw "short read at $off" }
-            for ($i = 0; $i -lt $len; $i++) { if ($a[$i] -ne $b[$i]) { $bad++ } }
+            # compare per-chunk SHA256: a per-byte PowerShell loop over 1 GiB takes
+            # minutes, hashing costs a few hundred ms per MB.
+            $ha = $shaR.ComputeHash($a)
+            $hb = $shaR.ComputeHash($b)
+            if ([BitConverter]::ToString($ha) -ne [BitConverter]::ToString($hb)) { $bad++ }
             $off += $len
         }
+        $shaR.Dispose()
         $ifs2.Close()
-        if ($bad -ne 0) { throw "readback mismatch: $bad bytes differ" }
-        Write-Output "readback full extent matches byte-for-byte ($Bytes B)"
+        if ($bad -ne 0) { throw "readback mismatch: $bad chunks differ" }
+        Write-Output ("readback full extent matches chunk-by-chunk ({0} B, chunk {1} B)" -f $Bytes, $Chunk)
     }
 } finally { $fs.Close() }
 Write-Output "OK"
