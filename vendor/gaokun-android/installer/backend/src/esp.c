@@ -249,7 +249,7 @@ int gk3w_esp_android_entry(char *out, size_t cap, const char *mid, char slot, co
     if ((slot != 'a' && slot != 'b') || !gk3w_is_machine_id(mid))
         return -1;
     n = snprintf(out, cap,
-                 "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _%c\n"
+                 "title      " GK3W_EGO_TITLE " - slot _%c\n"
                  "version    gaokun3-slot-%c\n"
                  "sort-key   zandroid%c\n"
                  "options    %s androidboot.slot_suffix=_%c\n"

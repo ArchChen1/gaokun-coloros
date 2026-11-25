@@ -202,7 +202,7 @@ def main():
     for s in 'ab':
         for f in ('Image', 'gaokun3.dtb', 'ramdisk.img'):
             same('%s/android/slot_%s/%s' % (a.mid, s, f), exp(f), 'boot.img 里的 %s' % f)
-        entry = ('title      ColorOS 17.0.1 (alpha-v1) \u2014 slot _{s}\nversion    gaokun3-slot-{s}\nsort-key   zandroid{s}\n'
+        entry = ('title      Direct boot (rescue) - slot _{s}\nversion    gaokun3-slot-{s}\nsort-key   zandroid{s}\n'
                  'options    {c} androidboot.slot_suffix=_{s}\nlinux      /{m}/android/slot_{s}/Image\n'
                  'devicetree /{m}/android/slot_{s}/gaokun3.dtb\ninitrd     /{m}/android/slot_{s}/ramdisk.img\n'
                  ).format(s=s, c=cmdline, m=a.mid)

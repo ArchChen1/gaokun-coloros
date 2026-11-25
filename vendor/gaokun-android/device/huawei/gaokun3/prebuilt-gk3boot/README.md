@@ -50,7 +50,7 @@ ESP上常态最多保留两个版本目录（当前生效版本与`gk3prev`上�
 
 ```text
 # gk3boot-android-<slot>.conf
-title      Android                          （observe模式为"Android (gk3boot observe)"，上一版为"Android (previous loader)"）
+title      ColorOS 17 - slot A               （observe模式为"… (observe)"，上一版为"… (prev loader)"）
 version    gk3boot-<ver>
 sort-key   0gk3                             （上一版为0gk3prev，均排在直连条目zandroid<x>之前）
 efi        /EFI/gk3boot/<ver>/gk3boot.efi

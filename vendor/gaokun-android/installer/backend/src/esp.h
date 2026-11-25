@@ -74,7 +74,7 @@ int gk3w_is_systemd_boot(const uint8_t *b, size_t n);
 /* EGO：启动项标题里的产品名与版本。未正式发版前用 alpha-vXX，随版本手动递增。
  * 测试与 check_install.py 引用同一个字符串。 */
 #ifndef GK3W_EGO_TITLE
-#define GK3W_EGO_TITLE "ColorOS 17.0.1 (alpha-v1)"
+#define GK3W_EGO_TITLE "Direct boot (rescue)"
 #endif
 
 /* loader/entries/<mid>-android-<slot>.conf 的全文。返回写入的长度，out 不够返回 -1。 */

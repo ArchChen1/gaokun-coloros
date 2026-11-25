@@ -644,8 +644,9 @@ FbState InstallFastboot(Pass* p, const std::string& ver, std::string* err) {
 // 条目正文。postinstall（bin/gaokun3-ota-postinstall.sh 的 gk3_entry_text）写的是同一个格式，改一边要改另一边。
 // title 只用 ASCII（设计稿 §4.13：UEFI ConOut 的 CJK 字形没验证过）。
 std::string EntryText(Kind kind, char slot, const std::string& ver, bool observe) {
-    std::string title = kind == Kind::kPrev ? "Android (previous loader)"
-                                            : (observe ? "Android (gk3boot observe)" : "Android");
+    const std::string who = std::string("ColorOS 17 - slot ") + (char)toupper(slot);
+    std::string title = kind == Kind::kPrev ? who + " (prev loader)"
+                                            : (observe ? who + " (observe)" : who);
     std::string sort = kind == Kind::kPrev ? "0gk3prev" : "0gk3";
     return "title      " + title + "\n" +
            "version    gk3boot-" + ver + "\n" +

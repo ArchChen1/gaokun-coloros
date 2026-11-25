@@ -40,7 +40,8 @@ act() {   # act <场景> <版本> <observe> <条目文件名…>：放现役 / �
     S=$P/sc-$1; v=$2; o=$3; shift 3
     mkdir -p "$S/esp/EFI/gk3boot/$v"; cp "$EFI" "$S/esp/EFI/gk3boot/$v/gk3boot.efi"
     for n in "$@"; do x=${n#gk3*-android-}; x=${x%%[.+]*}
-      printf 'title      Android\nversion    gk3boot-%s\nsort-key   0gk3\nefi        /EFI/gk3boot/%s/gk3boot.efi\noptions    gk3.observe=%s gk3.hint=%s\n' "$v" "$v" "$o" "$x" > "$S/esp/loader/entries/$n"
+      X=$(printf '%s' "$x" | tr 'ab' 'AB')
+      printf 'title      ColorOS 17 - slot %s\nversion    gk3boot-%s\nsort-key   0gk3\nefi        /EFI/gk3boot/%s/gk3boot.efi\noptions    gk3.observe=%s gk3.hint=%s\n' "$X" "$v" "$v" "$o" "$x" > "$S/esp/loader/entries/$n"
     done
 }
 go() { OUT=$(bash "$H/harness.sh" "$SH" "$P/sc-$1" 1 2>&1); RC=$(echo "$OUT" | LC_ALL=C sed -n 's/^RC=//p'); }
@@ -67,7 +68,7 @@ echo "  P2 observe、第一次部署"
 sc p2 observe "$V1"; go p2
 chk "RC=0、条目 = +3 ×2" '[ "$RC" = 0 ] && [ "$(gk)" = "gk3boot-android-a+3.conf gk3boot-android-b+3.conf " ]'
 chk "二进制写好、与 vendor 一致、没有 .new" 'cmp -s "$EFI" "$P/run/esp/EFI/gk3boot/$V1/gk3boot.efi" && ! find "$P/run/esp" -name "*.new" | grep -q .'
-chk "条目正文" '[ "$(cat "$E/gk3boot-android-b+3.conf")" = "$(printf "title      Android (gk3boot observe)\nversion    gk3boot-%s\nsort-key   0gk3\nefi        /EFI/gk3boot/%s/gk3boot.efi\noptions    gk3.observe=1 gk3.hint=b" $V1 $V1)" ]'
+chk "条目正文" '[ "$(cat "$E/gk3boot-android-b+3.conf")" = "$(printf "title      ColorOS 17 - slot B (observe)\nversion    gk3boot-%s\nsort-key   0gk3\nefi        /EFI/gk3boot/%s/gk3boot.efi\noptions    gk3.observe=1 gk3.hint=b" $V1 $V1)" ]'
 chk "直连条目照常同步、内核照常写" 'grep -q "^options    console=tty0 foo=bar androidboot.slot_suffix=_b" "$E/$MID-android-b.conf" && [ "$(cat "$P/run/esp/$MID/android/slot_b/Image")" = IMAGE ]'
 rm -rf "$P/p2-esp"; cp -R "$P/run/esp" "$P/p2-esp"
 
@@ -80,7 +81,7 @@ chk "条目不变、陈旧 .staged 被清" '[ "$RC" = 0 ] && [ "$(gk)" = "gk3boo
 echo "  P4 action、ESP 上是同版本 observe ⇒ 写 .staged（observe=0），现役不动"
 sc p4 action "$V1"; act p4 "$V1" 1 gk3boot-android-a.conf gk3boot-android-b.conf; go p4
 chk "现役 + .staged ×2" '[ "$(gk)" = "gk3boot-android-a.conf gk3boot-android-a.conf.staged gk3boot-android-b.conf gk3boot-android-b.conf.staged " ]'
-chk ".staged 是 observe=0、title Android" 'grep -q "^options    gk3.observe=0 gk3.hint=a gk3.dispatch=1$" "$E/gk3boot-android-a.conf.staged" && grep -q "^title      Android$" "$E/gk3boot-android-a.conf.staged"'
+chk ".staged 是 observe=0、title ColorOS slot A" 'grep -q "^options    gk3.observe=0 gk3.hint=a gk3.dispatch=1$" "$E/gk3boot-android-a.conf.staged" && grep -q "^title      ColorOS 17 - slot A$" "$E/gk3boot-android-a.conf.staged"'
 
 echo "  P5 vendor 是新版 V2、ESP 上现役 V1 ⇒ V2 目录 + .staged，V1 原样"
 sc p5 action V2; act p5 "$V1" 0 gk3boot-android-a.conf gk3boot-android-b.conf; go p5

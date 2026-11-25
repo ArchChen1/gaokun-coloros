@@ -310,9 +310,10 @@ fi
 # ★ 这一节的任何失败都【不】让 OTA 失败：直连条目上面已经写好，入口没部署上 = 今天的启动路径。
 #   部署到一半失败时撤掉这次写的条目（二进制留着，下次 / HAL 会复用或回收）。
 gk3_entry_text() {   # $1=active|prev $2=槽 $3=版本 $4=observe（0|1）
-    if [ "$1" = prev ]; then _gt="Android (previous loader)"; _gk=0gk3prev
-    elif [ "$4" = 1 ]; then _gt="Android (gk3boot observe)"; _gk=0gk3
-    else _gt="Android"; _gk=0gk3; fi
+    _who="ColorOS 17 - slot $(echo "$2" | tr 'ab' 'AB')"
+    if [ "$1" = prev ]; then _gt="$_who (prev loader)"; _gk=0gk3prev
+    elif [ "$4" = 1 ]; then _gt="$_who (observe)"; _gk=0gk3
+    else _gt="$_who"; _gk=0gk3; fi
     # 动作模式顺带 gk3.dispatch=1（1.0，与 boot_control/Gk3Boot.cpp 的 EntryText 逐字相同）
     if [ "$4" = 1 ]; then _gd=""; else _gd=" gk3.dispatch=1"; fi
     printf 'title      %s\nversion    gk3boot-%s\nsort-key   %s\nefi        /EFI/gk3boot/%s/gk3boot.efi\noptions    gk3.observe=%s gk3.hint=%s%s\n' \

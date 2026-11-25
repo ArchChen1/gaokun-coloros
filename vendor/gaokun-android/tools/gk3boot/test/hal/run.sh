@@ -109,7 +109,7 @@ chk "notify 空、streak=0" '[ -z "$(p notify)" ] && [ "$(p streak)" = 0 ]'
 echo "═ S4 OTA 到带 V2 的系统（新槽 vendor = V2）⇒ V1（祝福过）变 gk3prev，V2 +3"
 vendor V2 y; run observe gk3boot-android-b.conf
 chk "条目 = gk3boot +3 ×2、gk3prev ×2" '[ "$(ls_e)" = "gk3boot-android-a+3.conf gk3boot-android-b+3.conf gk3prev-android-a.conf gk3prev-android-b.conf " ]'
-chk "gk3prev 指向 V1、sort-key 0gk3prev、title" 'grep -q "^efi        /EFI/gk3boot/V1/gk3boot.efi$" "$T/esp/loader/entries/gk3prev-android-a.conf" && grep -q "^sort-key   0gk3prev$" "$T/esp/loader/entries/gk3prev-android-a.conf" && grep -q "^title      Android (previous loader)$" "$T/esp/loader/entries/gk3prev-android-a.conf"'
+chk "gk3prev 指向 V1、sort-key 0gk3prev、title" 'grep -q "^efi        /EFI/gk3boot/V1/gk3boot.efi$" "$T/esp/loader/entries/gk3prev-android-a.conf" && grep -q "^sort-key   0gk3prev$" "$T/esp/loader/entries/gk3prev-android-a.conf" && grep -q "^title      ColorOS 17 - slot A (prev loader)$" "$T/esp/loader/entries/gk3prev-android-a.conf"'
 chk "V1、V2 两个目录都在" '[ -f "$T/esp/EFI/gk3boot/V1/gk3boot.efi" ] && [ -f "$T/esp/EFI/gk3boot/V2/gk3boot.efi" ]'
 chk "mode=observe version=V2" '[ "$(p mode)" = observe ] && [ "$(p version)" = V2 ]'
 
@@ -124,7 +124,7 @@ echo "═ S6 同一版本 observe → action ⇒ 重写 +3、gk3.observe=0、tit
 mv "$T/esp/loader/entries/gk3boot-android-a+3.conf" "$T/esp/loader/entries/gk3boot-android-a+1-2.conf"
 run action gk3boot-android-a+1-2.conf
 chk "条目 = +3 ×2 + gk3prev ×2" '[ "$(ls_e)" = "gk3boot-android-a+3.conf gk3boot-android-b+3.conf gk3prev-android-a.conf gk3prev-android-b.conf " ]'
-chk "options gk3.observe=0 + gk3.dispatch=1、title Android" 'grep -q "^options    gk3.observe=0 gk3.hint=a gk3.dispatch=1$" "$T/esp/loader/entries/gk3boot-android-a+3.conf" && grep -q "^title      Android$" "$T/esp/loader/entries/gk3boot-android-a+3.conf"'
+chk "options gk3.observe=0 + gk3.dispatch=1、title Android" 'grep -q "^options    gk3.observe=0 gk3.hint=a gk3.dispatch=1$" "$T/esp/loader/entries/gk3boot-android-a+3.conf" && grep -q "^title      ColorOS 17 - slot A$" "$T/esp/loader/entries/gk3boot-android-a+3.conf"'
 chk "gk3prev 仍指 V1" 'grep -q "/EFI/gk3boot/V1/" "$T/esp/loader/entries/gk3prev-android-a.conf"'
 
 echo "═ S7 postinstall 留下的 .staged（V4）+ 新槽 vendor = V4 ⇒ 激活：V3 祝福过 → gk3prev，V4 +3，.staged 没了"
