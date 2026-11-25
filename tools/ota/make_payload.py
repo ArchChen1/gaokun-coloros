@@ -210,7 +210,9 @@ def main():
         "METADATA_SIGNATURE": base64.b64encode(signature).decode(),
     }
     props_path = a.out + ".properties"
-    with open(props_path, "w", encoding="utf-8") as f:
+    # newline="\n" 必须显式给：Windows 上默认会写 CRLF，设备侧 k=v 解析会把 \r 带进
+    # hash 值里，直接 kPayloadHashMismatchError (10)
+    with open(props_path, "w", encoding="utf-8", newline="\n") as f:
         for k, v in props.items():
             f.write(f"{k}={v}\n")
 

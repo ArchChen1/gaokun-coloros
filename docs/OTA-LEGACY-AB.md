@@ -194,6 +194,74 @@ cmdline.base(584): …androidboot.selinux=enforcing…
 校验链：`rebuild_system_patched.sh` 第 3 步现在会硬拦——build.prop 里还有 `ro.virtual_ab.*`、
 snapuserd.rc 里还有 `gk3run`/`gk3clean`、或 `gk3-logdump.rc` 还在，任何一条成立就 `exit 5`。
 
+## 端到端 OTA 实测（2026-11-26，legacy A/B + 自签 payload）
+
+**先说结论：`update_engine` 的写入链路本身完全可用，但 payload 不能只带一部分分区。**
+
+### 第 1 次：3 分区小包（`system` / `my_region` / `my_manifest`，1.07 GiB）
+
+`update_engine_client --payload=file:///… --update --follow` → `kSuccess (0)`，RC=0。回读目标槽（当时在 `_b`，目标 `_a`）：
+
+```
+system_a      sector 2048     2221480 blocks  sha 4011db1d…  与源一致
+my_manifest_a sector 2223528  1400            sha c9c9803e…  与源一致
+my_region_a   sector 2224928  14136           sha c29b97f6…  与源一致
+```
+
+但**元数据被按 manifest 重建**了：目标槽只剩这三个分区，另外 10 个 `_a` 分区从表里消失，且三个分区被重新紧凑分配（`my_manifest_a` 从 19,636,224 挪到 2,223,528）。
+
+⇒ 部分分区 payload 会让目标槽**必然起不来**（其余 10 个分区挂不上）。这条决定了：**payload 必须覆盖 13 个动态分区**。
+
+### 第 2 次：13 分区全量（10,059,526,144 B，9.36 GiB）
+
+`kSuccess`，元数据 26 个分区齐全，A 槽被紧凑重排为 2048 → 19,649,560（B 槽 extents 原样未动）。
+抽验四块区间（`dd bs=512 skip=<sector> count=<blocks>` 后 `sha256sum`）全部与源一致：
+
+| 分区 | sector | blocks | sha256 |
+|---|---|---|---|
+| system_a | 2048 | 2,221,480 | `4011db1d…` |
+| vendor_a | 4,477,584 | 1,048,576 | `dd574c17…` |
+| my_stock_a | 11,766,832 | 7,864,568 | `932bec9e…` |
+| my_region_a | 19,632,800 | 14,136 | `c29b97f6…` |
+
+BCAB 被引擎自己改成 `a: pri15 tries6 ok0` / `b: pri14 tries1 ok1`（切槽走的是 boot HAL，不需要 `update_engine_client --switch_slot`）。
+
+### 第 3 次踩的坑：**目标槽起不来，且 gk3boot 三个条目一起"失败"**
+
+A 槽起不来的真因是内容混装（`system` 用了 v50 时期补丁版，其余 11 个分区用了 v52 构建），与 OTA 机制无关。
+而 gk3boot 的 A/B 两条 + 直连 A 三条一起十秒自重启，是同一个原因串起来的：BCAB 里 A 优先级仍最高、
+`tries` 还没烧完，gk3boot 不管 `gk3.hint=a/b` 都去启 A，失败 → 重启 → 再烧一次 tries。
+**排查这类问题时先看 BCAB，不要按条目名分别怀疑。**
+
+### 第 3 次：以「在跑槽的克隆」为准，成功
+
+把 `_b` 的 13 个分区按 extents 原样 dump（`dd if=super bs=512 skip=<sector> count=<blocks>`）→ 13/13 sha 与设备一致
+→ 用这一个目录做包（`parts.lock` 记录每份 sha）→ `kSuccess` → 重启。
+
+```
+slot_suffix=_a            boot_completed=1        ro.boot.gk3boot.event=none
+ro.boot.selinux=permissive   getenforce=Permissive   /dev/block/mapper 里 _a 13 个
+A 槽抽验：system 4011db1d… / vendor dd574c17… / my_stock 17a19bda… / my_region 5783ff83…
+BCAB 回写：slot_a pri=15 tries=1 ok=1  ← 6 → 1，markSuccessful 生效
+```
+
+⇒ **legacy A/B + 自签 payload 的端到端链路成立**：下载 → 校验签名 → 写目标槽 → 重建元数据 → 切槽（BCAB）→ 重启 →
+开机完成后 `markBootSuccessful`。legacy A/B 没有 `--merge` 这一步（那是 VABC 的）。
+
+### 第 4 个坑：Windows 上生成的 `payload.bin.properties` 是 CRLF
+
+`kPayloadHashMismatchError (10)`，原因不是哈希算错，而是 properties 每行尾带 `\r`，
+`FILE_HASH` 解析出来是 `…Mw0=\r`，跟实际哈希对不上。生成器已改成
+`open(props_path, "w", encoding="utf-8", newline="\n")`。设备侧应急可以用 `tr -d "\r"` 洗一遍。
+
+1. **payload 源必须是单一来源。** 从散落的 `v49/`、`v50/`、`v52/`、`current/parts`、`current/zb` 里各挑几个拼一套，
+   混装几乎必然起不来（这个错已经犯过多次）。现在固定做法：源 = **设备上已验证能启动的那一槽的原样 dump**
+   （`dd if=super bs=512 skip=<sector> count=<blocks>` 逐分区导出）+ `parts.lock` 记录每份 sha，
+   生成器只吃这一个目录。
+2. **每次 OTA 之后都要重 parse 元数据**（`lp_ab_meta.py parse`），因为引擎会重排目标槽 extents、重写 group、并给 header 打 `virtual_ab` 标志。
+   本次 header flags = `1953724787`（bit0 置位）——说明运行镜像里还带着 `ro.virtual_ab.*`，引擎仍按 VABC 分支建元数据。
+   清理版镜像上线后要复测一次，确认回落成 legacy 形态。
+
 ## 待办
 
 - 用清理后的树重打一次 `system.erofs` 并上机验证（当前设备跑的仍是旧镜像，后门还在）
