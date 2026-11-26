@@ -6,7 +6,7 @@
     "branch": "master",
     "head": "e36b3ae3466482f68f394a8939a6481b462e28dd",
     "commit_count": 139,
-    "config_sha256": "4acb3aebe0e086140a5c8eb32e93eac0b58d687c68c29dfa98ab5f0e680e1170",
+    "config_sha256": "4bf25896b72f49ab446c4ff405194c220500c567f7ebef635cc84d648394d30a",
     "config_in_repo": "patches/kernel-build/kernel-config-7.2.9-gaokun3.txt",
     "base_commit": "2f6ee52d42deae4650756aaf740b1525f16b956e",
     "combined_patch": {
@@ -22,20 +22,27 @@
     },
     "artifact": {
       "path": "/home/cenmin/kbuild/linux-7.2.9-gk3/arch/arm64/boot/vmlinuz.efi",
-      "bytes": 16179712,
-      "sha256": "188e5cec7455947ab370a6351e5e931b52afb7e56e4c65a3e172e0b14634ad08",
+      "bytes": 16192000,
+      "sha256": "782b2dc1386f2b04f36122a3e8fbfe104c84c16d5c0479c92362a93c9f71ddb0",
       "built_from_head": "e36b3ae3466482f68f394a8939a6481b462e28dd",
-      "build_cmd": "make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) vmlinuz.efi"
+      "build_cmd": "KSU_EXPECTED_SIZE=0x377 KSU_EXPECTED_HASH=d3469712… make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) vmlinuz.efi",
+      "verified_on_device": "2026-11-27 经 boot-only OTA 刷入 boot_a，gk3boot 默认路径正常启动（#18），ReSukiSU 管理器显示工作中，shell su 拿到 uid=0 context=u:r:ksu:s0"
     },
     "ksu": {
       "repo": "https://github.com/ReSukiSU/ReSukiSU",
-      "tag": "v4.1.0",
-      "local_commits_on_top": [
-        "2f24733a apk_sign: include linux/hex.h (bin2hex 在 7.2 拆到 hex.h)",
-        "6221352b throne_tracker: strncpy -> memcpy（定长拷贝语义不变）",
-        "7189026a throne_tracker: 第二处 strncpy -> strscpy"
-      ],
-      "note": "v4.1.0 + 3 条 7.2 适配提交；miuix 本地分支指向同一 HEAD 供 Kbuild 算版本号（40199+）；集成方式 drivers/kernelsu 软链 + Makefile/Kconfig 挂钩（树内提交 e36b3ae）"
+      "tag": "v4.2.0-rc3",
+      "pin": "239e1e8871b8fcd51a6e5b3002e0ba522fdd99fb",
+      "uapi": 4,
+      "manager_version_code": 35171,
+      "setup_script": "vendor/gaokun-android/scripts/kernel-setup-resukisu.sh",
+      "compat_patch": "vendor/gaokun-android/patches/resukisu/0002-compat-restore-strncpy-on-kernels-that-removed-it.patch",
+      "hook": "KSU_TRACEPOINT_HOOK=y（需 CONFIG_FTRACE_SYSCALLS=y）；KSU_MULTI_MANAGER_SUPPORT=y",
+      "manager_signature": {
+        "KSU_EXPECTED_SIZE": "0x377",
+        "KSU_EXPECTED_HASH": "d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64",
+        "apk": "ReSukiSU_v4.2.0-rc3_35171-arm64-v8a-release.apk（pkg com.resukisu.resukisu）"
+      },
+      "note": "改用 vahiru 验证过的 rc3（UAPI4 与同名管理器一致）。rc3 自带 tools/kernel_compat.mk 按内核源码自动探测 API，对 7.2 主线友好；7.2.9 上只需 0002 strncpy 兼容补丁（0001/0003 上游已含）。集成方式 drivers/kernelsu 软链 + Makefile/Kconfig 挂钩（树内提交 e36b3ae，挂钩与版本无关）；KSU 源码由 setup 脚本克隆到树内 ReSukiSU/ 并打 0002。曾用的 v4.1.0 因 UAPI 偏低（管理器拒授权）+ execve 挂钩 try_set_access_flag 页表救援在 7.2 原子上下文 panic 而弃用。"
     },
     "ported_patches": [
       "2c2eb2a power: supply: huawei-gaokun-battery: 0x82 按位解码 + CAPACITY_LEVEL + 温度 0x9C + ec_raw（vahiru ec-usb/0001+0016 手工移植）",
@@ -44,9 +51,9 @@
   },
   "esp": {
     "image": {
-      "bytes": 16179712,
-      "sha256": "待上机验证后更新（新产物 188e5cec7455947a…）",
-      "origin": "内核树 vmlinuz.efi（同 sha，已和 ESP 现场比对过）"
+      "bytes": 16192000,
+      "sha256": "782b2dc1386f2b04f36122a3e8fbfe104c84c16d5c0479c92362a93c9f71ddb0",
+      "origin": "内核树 vmlinuz.efi（rc3，同 sha）；boot_a/boot_b 经 boot-only OTA 写入并上机验证启动"
     },
     "dtb": {
       "bytes": 174904,

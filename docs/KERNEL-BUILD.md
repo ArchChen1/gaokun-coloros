@@ -128,3 +128,57 @@ bash build/patches/verify_all.sh             # 总闸，第 5 层就是它
 3. 刷进 ESP 并回读 sha，再更新 `esp.image`。
 
 内核 build 不可能字节复现（工具链、时间戳），所以这一层验的是"源码相同 + 产物相同"，不是"能重编出一模一样的字节"。
+
+## 十一、KernelSU（root）集成 —— ReSukiSU v4.2.0-rc3
+
+root 走 **ReSukiSU v4.2.0-rc3**（`github.com/ReSukiSU/ReSukiSU`，pin `239e1e8871b8fcd51a6e5b3002e0ba522fdd99fb`），与同名管理器 APK（`com.resukisu.resukisu`，versionCode 35171，UAPI 4）配套。这是 vahiru 在 7.2.9 上验证过的组合。
+
+**为什么是 rc3 而不是 v4.1.0**：v4.1.0 的 UAPI 偏低，rc3 管理器发现内核比自己旧就只提示"需要更新内核"、拒绝授权；且 v4.1.0 的 execve 挂钩里 `try_set_access_flag`（手动走页表改 PTE 访问位）在 7.2 的原子上下文里会 kernel panic。rc3 重写了挂钩，并自带 `tools/kernel_compat.mk` 按内核源码自动探测 API（不写死版本号），对主线友好。
+
+复现步骤（接在第五节配置之后）：
+
+```bash
+# 1) 克隆 rc3 + 打兼容补丁 + 建 drivers/kernelsu 软链（脚本已 pin 239e1e88）
+GAOKUN_VENDOR=vendor/gaokun-android bash vendor/gaokun-android/scripts/kernel-setup-resukisu.sh ~/kbuild/linux-7.2.9-gk3
+# 2) 配置：KSU 走 tracepoint 钩子（需 FTRACE_SYSCALLS）
+./scripts/config -e KSU -e KSU_TRACEPOINT_HOOK -e FTRACE_SYSCALLS -e KPROBES -e KRETPROBES
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+# 3) 注入管理器签名后编译（否则管理器不被内核信任）
+KSU_EXPECTED_SIZE=0x377 \
+KSU_EXPECTED_HASH=d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64 \
+CPATH=~/ssl/usr/include:~/ssl/usr/include/x86_64-linux-gnu \
+LIBRARY_PATH=~/ssl/usr/lib/x86_64-linux-gnu \
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) vmlinuz.efi
+```
+
+要点：
+
+- 7.2.9 上只需 `patches/resukisu/0002`（strncpy 兼容）；0001（text-patching.h 改名）/0003（task_stack.h）上游 rc3 已含，不用打。
+- 树内挂钩 `drivers/Kconfig`（`source "drivers/kernelsu/Kconfig"`）+ `drivers/Makefile`（`obj-$(CONFIG_KSU) += kernelsu/`）与 KSU 版本无关，提交 `e36b3ae` 已含；`drivers/kernelsu` 软链由 setup 脚本建立、不入 git。
+- 管理器签名 `0x377 / d3469712…` 来自 rc3 release APK 的 v2 签名块，必须经 `KSU_EXPECTED_SIZE/HASH` 编进内核。
+- 验收：管理器主页显示「工作中」、内核驱动版本与管理器版本都是 `v4.2.0-rc3 (35171/4)`；shell `su -c id` 返回 `uid=0(root) context=u:r:ksu:s0`。
+
+## 十二、boot-only 极速 OTA 与免 root 槽控制（调试通道）
+
+换内核验证不必每次走 2 GiB 全量包。两条已打通的捷径：
+
+**boot-only payload**（`tools/ota/make_boot_payload.py`）：只含一个 `boot` 静态分区 REPLACE 的 payload（约 28 MB）。坑：全 REPLACE 无源操作会被引擎判为 full payload，**`minor_version` 必须 0**（写 4 报 `kUnsupportedMinorPayloadVersion`）；分区名用 `boot`，引擎自动补目标槽后缀。设备端 shell 直调引擎安装（约 0.8 s）：
+
+```bash
+update_engine_client --reset_status   # 若停在 UPDATED_NEED_REBOOT 必须先复位
+update_engine_client --update --follow --payload=http://<PC>:8855/payload.bin \
+  --headers='FILE_HASH=…\nFILE_SIZE=…\nMETADATA_HASH=…\nMETADATA_SIZE=…\nMETADATA_SIGNATURE=…'
+```
+
+**免 root 槽控制**：设备无 `bootctl`，但 shell 可直连 boot HAL binder（SELinux permissive，HAL 不校验 uid）。方法号按字母序：
+
+```bash
+service call android.hardware.boot.IBootControl/default 1          # getActiveBootSlot
+service call android.hardware.boot.IBootControl/default 9 i32 0    # setActiveBootSlot A（同步镜像 ESP 默认条目）
+service call android.hardware.boot.IBootControl/default 8          # markBootSuccessful
+service call android.hardware.boot.IBootControl/default 10 i32 0   # setSlotAsUnbootable A
+```
+
+迭代闭环：WSL 编内核 → Win python 换 boot 镜像 kernel 段（`work/pack_boot_a_ksu.py`）→ `make_boot_payload` → 刷 index → 设备 `reset_status`+install → binder 切槽 → reboot → 验证，一轮约 2 分钟。
+
+**救援教训**：gk3boot 的 a/b 条目都按 misc BCAB 选槽、不看条目名；rescue 进系统会把当前槽洗白成 successful。若 boot_a 是坏内核，两条目会反复启坏内核死循环——用 binder 把活动槽切到好内核所在的 B 槽即可正常重启，不必进救援。
