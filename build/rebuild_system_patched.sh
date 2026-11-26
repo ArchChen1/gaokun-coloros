@@ -38,7 +38,7 @@ LIMIT=1137397760                               # system_a：2,221,480 sectors
 # 与 build/current_build.sh 一致（基座 parts/system.erofs 是早期随机 UUID 的版本，
 # 两者内容已比对为 0 差异，UUID 只影响超级块字节，不影响挂载）
 UUID_SYS=4f3a1b2c-5d6e-4f70-8a91-b2c3d4e5f601
-ALLOW="${ALLOW:-system/build.prop system/bin/update_engine system/etc/init/snapuserd.rc system/etc/init/gk3-logdump.rc system/etc/gk3-logdump.sh}"
+ALLOW="${ALLOW:-system/build.prop system/bin/update_engine system/etc/init/snapuserd.rc system/etc/init/gk3-logdump.rc system/etc/gk3-logdump.sh system/priv-app/OtaUpdater/OtaUpdater.apk system/priv-app: OtaUpdater system/bin/gk3otad.sh system/etc/init/gk3otad.rc}"
 
 for t in "$MKFS" "$FSCK"; do [ -x "$t" ] || { echo "缺工具: $t"; exit 1; }; done
 [ -d "$TREE/system/bin" ] || { echo "树不存在: $TREE/system/bin"; exit 1; }
@@ -56,7 +56,7 @@ diff -rq --no-dereference "$TMP/ex_base" "$TREE" > "$TMP/contentdiff.txt" 2>&1 |
 PAT=""
 for f in $ALLOW; do PAT="${PAT:+$PAT|}$f"; done
 # 被删掉的调试钩子，diff 里长这样："Only in …/ex_base/system/etc: gk3-logdump.sh"
-PAT="$PAT|system/etc: gk3-logdump.sh|system/etc/init: gk3-logdump.rc"
+PAT="$PAT|system/etc: gk3-logdump.sh|system/etc/init: gk3-logdump.rc|system/bin: gk3otad.sh|system/etc/init: gk3otad.rc|system/etc: gk3-charge"
 UNEXPECTED=$(grep -v -E "($PAT)" "$TMP/contentdiff.txt" || true)
 echo "   差异条目 $(wc -l < "$TMP/contentdiff.txt") 条："
 sed 's/^/     /' "$TMP/contentdiff.txt" | head -20
@@ -75,6 +75,9 @@ if grep -q 'ro.virtual_ab' "$TREE/system/build.prop"; then echo "   !! build.pro
 if grep -q 'gk3run\|gk3clean' "$TREE/system/etc/init/snapuserd.rc"; then echo "   !! snapuserd.rc 里还有 gk3run / gk3clean"; exit 5; fi
 if [ -e "$TREE/system/etc/init/gk3-logdump.rc" ]; then echo "   !! 调试钩子 gk3-logdump.rc 还在"; exit 5; fi
 echo "   通过：无 virtual_ab 属性、无 root runner / 清理 service、无 /metadata 转储钩子"
+if [ ! -f "$TREE/system/priv-app/OtaUpdater/OtaUpdater.apk" ]; then echo "   !! 更新器没预装（先跑 build/patches/p_updater_privapp.sh）"; exit 5; fi
+if [ ! -x "$TREE/system/bin/gk3otad.sh" ] || [ ! -f "$TREE/system/etc/init/gk3otad.rc" ]; then echo "   !! 写入服务不全"; exit 5; fi
+echo "   通过：更新器 + 写入服务已就位（$(sha256sum "$TREE/system/priv-app/OtaUpdater/OtaUpdater.apk" | cut -c1-12)…）"
 
 echo "== 4. 重打 system.erofs"
 rm -f "$TMP/candidate.erofs"

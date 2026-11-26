@@ -26,7 +26,7 @@ python3 "$ROOT/tools/ota/parts_manifest.py" verify --manifest "$MAN" || FAIL=1
 
 say "== 2. 关键分区 sha 钉死（设备实证值）"
 declare -A PIN=(
-  [system]=185b499142153ca628dd0a507bf970eb3bb0b887f5a1357f04187aea5b4886e8
+  [system]=a4b91f7305641b51c993f625063be8074b81674953242a721d1b7cc1fe2ed22e
   [vendor]=dd574c1756496e2fdf598748600da5229862fdef3a1bc8a591a5685f08c0defb
   [my_engineering]=ce71e4b632eac3f65ccb5bbfaddad0ba9721ffa1511a88a729637c34baa7e6bb
 )
@@ -46,6 +46,10 @@ if mount -o loop,ro "$S" "$T/s"; then
     if [ -e "$T/s/system/etc/init/gk3-logdump.rc" ]; then fail "system：调试钩子 gk3-logdump.rc 还在"; fi
     if grep -q 'gk3run\|gk3clean' "$T/s/system/etc/init/snapuserd.rc" 2>/dev/null; then fail "system：snapuserd.rc 里还有 gk3run / gk3clean（root runner 没撤）"; fi
     if grep -q 'snapuserd -ublk' "$T/s/system/etc/init/snapuserd.rc" 2>/dev/null; then fail "system：snapuserd 还带 -ublk"; fi
+    if [ -f "$T/s/system/priv-app/OtaUpdater/OtaUpdater.apk" ] && [ -x "$T/s/system/bin/gk3otad.sh" ] && [ -f "$T/s/system/etc/init/gk3otad.rc" ]; then
+        U=$(sha256sum "$T/s/system/priv-app/OtaUpdater/OtaUpdater.apk" | cut -d' ' -f1)
+        ok "system：更新器已预装 + 写入服务在位（apk ${U:0:12}…）"
+    else fail "system：更新器 / 写入服务没预装进镜像"; fi
     ok "system：发布清理在位（无 virtual_ab / 无 logdump / 无 root runner / 无 -ublk）"
 else fail "system 镜像挂不上：$S"; fi
 if mount -o loop,ro "$V" "$T/v"; then

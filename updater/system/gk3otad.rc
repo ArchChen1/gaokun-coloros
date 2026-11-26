@@ -1,0 +1,9 @@
+# 写入服务：root 身分跑一个 5 秒轮询的 shell 循环（见 gk3otad.sh 顶部的边界说明）。
+# 本机 SELinux 是 permissive，domain 用 su 即可；它不是通用 su 通道，只消费固定请求文件。
+service gk3otad /system/bin/gk3otad.sh
+    class core
+    user root
+    group root system
+    seclabel u:r:su:s0
+    stdio null
+    disabled false
