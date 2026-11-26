@@ -279,3 +279,62 @@ payload `7,266,354,314 B`（6.77 GiB，原始 9.37 GiB，压缩比 0.722，耗�
 **一条操作坑**：`adb install` 的 `com.oplus.ota` 会盖住 priv-app 的系统版（`pm path` 指 `/data/app/…`），
 且跨槽共享；`pm uninstall` 后才回落 `/system/priv-app/OtaUpdater/OtaUpdater.apk`（flags `SYSTEM`）。
 另外 OPPO 的 `pm clear` 对 adb 是禁的（`OplusClearDataProtectManager` 拦截），清数据只能走 uninstall。
+
+## 13. 转 enforcing 的改造清单（草稿，待实施）
+
+目标：`selinux=enforcing` 之后，「设置 → 软件更新 → 安装」这条链路一点不退化。
+
+**要改的三处**
+
+1. **写入服务换域**（`/system/etc/init/gk3otad.rc`）
+   - 现在：`seclabel u:r:su:s0`，靠 permissive 放行；enforcing 下 init 找不到可 transition 的 su 域，服务起不来。
+   - 改成 `seclabel u:r:gk3otad:s0`，并新增：
+     ```
+     type gk3otad, domain;
+     type gk3otad_exec, exec_type, file_type, system_file_type;
+     init_daemon_domain(gk3otad)
+     allow gk3otad gk3otad_exec:file { read execute };
+     allow gk3otad update_engine:binder { call transfer };
+     allow gk3otad system_file:file { read execute };          # 跑 /system/bin/update_engine_client
+     allow gk3otad com_oplus_ota_data_file:dir { search open read write add };
+     allow gk3otad com_oplus_ota_data_file:file { read write create open };
+     ```
+   - `file_contexts` 加一行 `/system/bin/gk3otad\.sh u:object_r:gk3otad_exec:s0`。
+   - 规则以真机 `audit2allow` 收口：先在全量允许下跑一遍安装，把 `avc: denied` 全部抓出来，再逐条最小化，
+     不要一次写 wide-open。
+   - `com.oplus.ota` 的私有目录标签要真机确认（可能是 `app_data_file` 而非 OEM 自定义标签），
+     用 `ls -Z /data/data/com.oplus.ota/files` 取实际值再写规则。
+
+2. **payload 落点改 `/data/ota_package`**
+   - 引擎对 `/data/ota_package` 有默认读写权（AOSP 约定的 `ota_package_file`），App 私有目录没有。
+   - App 下完 + 校验过之后，request 里写「源路径」，由 `gk3otad` 负责搬进 `/data/ota_package/<name>.bin`
+     再调引擎；成功后清掉。
+   - 好处：引擎侧零改动，也不用给 `update_engine` 加「读别人私有目录」的规则（那条规则最危险）。
+
+3. **`com.oplus.ota` 自己也可能被卡**
+   - 它要读系统属性（`persist.sys.gk3.ota.url`，走 `property_service` 的读）与 `getprop`，
+     现在靠 `system_app`/priv-app 默认规则；enforcing 后要确认这两条没被 denied。
+   - 建议同样用 `audit2allow` 打点，别预设。
+
+**验证方式**：把 `ro.boot.selinux` 临时 `setenforce 1` 之后，走一遍完整 UI 安装；`logcat | grep avc` 必须干净，
+否则按 denial 补规则，直到一轮安装 0 条 denied。
+
+## 14. 本地包入口 + bz2 发布形态实测（2026-11-26 15:4x）
+
+**「选择本地 OTA 包」跑通了**：把 `update.zip`（7.55 GiB，bz2 payload，store 内嵌）推到
+`/sdcard/Download/local_ota_bz2.zip`，在 UI 点「选择本地 OTA 包」→ ColorOS 文件管理器的文档选择器
+（不是 AOSP DocumentsUI，界面是「最近 / 搜索文件」那一套）→ 选中 zip。
+App 把 zip 复制到私有目录、抽 `payload.bin` 与 `payload_properties.txt` → 显示
+「本地包已就绪 7.55 GB ｜ sha 9765a33bc85e…」→ 点「安装」→ 引擎 `rc=0`（214 行日志）、`UPDATED_NEED_REBOOT`。
+
+**bz2 全量在真机上验过了**：这次本地安装走的正是 bz2 压缩包（2407 个 `REPLACE_BZ`），
+100% 完成、无 op 报错，说明「bz2 + 4 MiB 分块」这条发布形态在引擎侧成立（xz 已确认不可用）。
+因此离线 `verify_payload.py` 对这份包就不必再跑一遍——引擎逐 op 校验每条都过了，比离线重拼更强。
+
+**发布候选已经摆在局域网上**：`work/www/`（`payload.bin` 7.55 GiB + `payload.bin.properties` + `update.zip`）
+配 `index.json`：version `OPD2513_11.C.17_1170_202611261530`、sha `9765a33b…`、zip `8108730390 B`。
+
+**又一个 OPPO 限制**：`com.oplus.ota` 现在是纯系统应用（不再有 adb 安装的副本），
+`pm uninstall` / `pm uninstall --user 0` 都会被拒（`DELETE_FAILED_INTERNAL_ERROR` / "only root can delete system app"），
+所以 App 私有目录里那 7.55 GB 的本地包删不掉——adb 侧没有清数据通道。
+要么在 UI 里加一个「清理已下载包」按钮（顺手也能省空间），要么接受它挂在 /data。
