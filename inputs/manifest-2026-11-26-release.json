@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-26T12:55:55",
+ "generated": "2026-11-26T14:10:10",
  "assertions": "scripts/current_verify.sh 全绿",
  "invariants": {
   "vendor_vulkan_freedreno_sha256": "7619b1286b7d0b2d697e0c48b6a471ab7f439eee0523ce1820fee6ba612b1d90",
@@ -12,8 +12,9 @@
   "system": {
    "path": "/home/cenmin/coloros-build/current/parts/release/system.erofs",
    "bytes": 1137397760,
-   "sha256": "a4b91f7305641b51c993f625063be8074b81674953242a721d1b7cc1fe2ed22e",
+   "sha256": "98e7ebe3a0c1b978c5c60482297c3013c6b7a4fbff206224597f9c07b051e5b3",
    "layers": [
+    "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)",
     "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)",
     "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)"
    ]
@@ -85,5 +86,5 @@
   "vendor": "v52 vendor 派生 + C2 HAL 修补（脚本待补，产物 dd574c17…）",
   "my_engineering": "v49 donor + 自签 otacerts.zip（脚本待补，产物 ce71e4b6…）"
  },
- "note": "发布基线：system = a4b91f73（无 gk3run/gk3clean/logdump/virtual_ab/ublk，且已预装 com.oplus.ota + gk3otad 写入服务）。B 槽已 OTA 并开机验证；A 槽仍是旧调试版 4011db1d（留着当 root 回退通道）。"
+ "note": "发布基线：system = 清理版 185b4991（无 gk3run/gk3clean/logdump/virtual_ab/ublk）。B 槽已 OTA 并开机验证；A 槽仍是旧调试版 4011db1d（留着当 root 回退通道）。"
 }

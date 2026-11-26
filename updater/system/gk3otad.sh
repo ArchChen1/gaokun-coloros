@@ -24,8 +24,8 @@ while true; do
     chmod 644 "$DIR/status"
 
     case "$payload" in
-        /data/data/com.oplus.ota/*) ;;
-        *) echo "reject: bad payload path" >> "$DIR/status"; chmod 644 "$DIR/status"; continue ;;
+        /data/data/com.oplus.ota/*|/data/user/0/com.oplus.ota/*) ;;
+        *) echo "reject: bad payload path: $payload" >> "$DIR/status"; chmod 644 "$DIR/status"; continue ;;
     esac
     [ -f "$payload" ] || { echo "reject: payload missing" >> "$DIR/status"; chmod 644 "$DIR/status"; continue; }
 

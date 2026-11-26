@@ -231,3 +231,26 @@ payload `7,266,354,314 B`（6.77 GiB，原始 9.37 GiB，压缩比 0.722，耗�
 **为什么 Windows 侧出包要换一份账本**：`make_payload.py` 在 Windows python 下读不到 `/home/...` 绝对路径，`work/manifest-win.json` 是把同一份账本里的路径映射成 `\\wsl.localhost\Ubuntu-24.04\home\...` 的一次性输入副本，不入库。
 
 **刷写流程（与第七节一致，只是 payload 带压缩）**：push payload + props 到 `/data/local/tmp` → 开机菜单选 `Direct boot (rescue) - slot _a`（A 槽调试版有 root 通道）→ 触发 `gk3run` 跑 `update_engine_client --update --follow` 写 `_b` → 引擎 `markSuccessful` 后重启落回 B → 复核预装 APK、`init.svc.gk3otad=running`、13 分区 sha。
+
+## 11. 首次端到端 UI 实测（2026-11-26 14:05）
+
+**在线链路通了**：把 `persist.sys.gk3.ota.url` 指到电脑上的静态服务（`http://192.168.1.152:8848/index.json`），
+点「检查更新」→ 显示「发现新版本 OPD2513_11.C.17_1170_202611261400 ｜ 更新包 7.55 GB ｜ sha f6961edd4031…」→
+点「下载更新包」→ 24% 起稳步推进、1.80 GB / 7.55 GB → 下完自动 sha256 校验 →「更新包已就绪」。
+
+**安装点了但被写入服务拒了**：状态显示「已交给系统写入服务 / reject: bad payload path」。
+原因是路径写法：`getFilesDir()` 给的是 `/data/user/0/com.oplus.ota/files/…`，而 `gk3otad.sh` 的白名单只写了
+`/data/data/com.oplus.ota/*`。两者是同一个目录（`/data/data` 是 `/data/user/0` 的别名），
+但字面匹配不过。修法是最小改动：白名单加一条 `/data/user/0/com.oplus.ota/*`，reject 日志带上实际路径。
+
+**顺带确认的两件事**：① 之前 `adb install` 的那份 `com.oplus.ota` 会把 priv-app 里的系统版盖掉
+（`pm path` 指 `/data/app/…`、flags 带 `UPDATED_SYSTEM_APP`），`pm uninstall` 之后就回落成
+`/system/priv-app/OtaUpdater/OtaUpdater.apk`（flags `SYSTEM` + `PRIVILEGED`），UI 一致；② `gk3otad` 开机即
+`init.svc.gk3otad=running`，`seclabel u:r:su:s0` 在 permissive 下可用。
+
+**压缩结论（重要，推翻第 10 节的 xz 选择）**：同一份账本出的 xz -6 payload 在引擎侧直接失败——
+`install_operation_executor.cc(194) writer->Write(...) failed` → `Failed to perform REPLACE_XZ operation 0`
+（2455 ms 就终止）。用「只含 my_bigball 一个分区」的 2.2 KB 小样复现同样错误，排除了体积因素；
+同一小样换 `bz2` 与 `none` 都 `kSuccess`。结论：这台设备的 `update_engine` 不带 XZ 解压路径，
+**发布压缩只能用 bz2**（全量 bz2 -9：8,108,730,778 B / 7.55 GiB，压缩比 0.806，出包 636 s，
+真机写入 709 s，`kSuccess`）。xz 只能留给「以后换引擎」时再评估。
