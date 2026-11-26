@@ -1,0 +1,9 @@
+# 要删掉的官方预装（分区:相对分区根的路径）
+#
+# 判定标准：不在设置里有入口、不被系统组件依赖、删掉不影响功能。换 OPPO 基线后
+# 若某行"已经不存在"，说明官方挪了位置或改名，需要重新确认，不要盲删。
+
+my_stock:del-app/OPPOStore                  # OPPO 商城 com.oppo.store
+my_stock:del-app/StudyCenter                 # 学习空间 com.oplus.studycenter
+my_stock:del-app/KeKeUserCenterMember       # 我的一加 com.oneplus.member
+system_ext:app/LogTrialCommercial           # OS 众测 com.oplus.logtrial

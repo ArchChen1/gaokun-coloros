@@ -429,3 +429,65 @@ receiver + 权限，且删包时机不受控；更新页本来就是用户看结
 4. bz2 压缩等级只影响出包时间与体积，不影响设备端解码速度 —— 想快只能换算法，不是调 `-9/-6`。
 
 结论倾向：**发布默认改 `none`（局域网/宽带）或 zstd（弱网）**，bz2 退居"省流量"选项。
+
+## 17. none 实测提速 + 去预装（附一次卡开机的真因）
+
+### 17.1 `none` 真机写入实测：62~68 秒
+
+同一台机、同一 13 分区、同一 4 MiB chunk：
+
+| 压缩 | payload | 设备端写入（引擎自报 `Command took`） |
+| --- | --- | --- |
+| bz2 -9 | 8,108,734,542 B（7.55 GiB） | 709~729 s |
+| none | 9,554,402,792 B（8.90 GiB） | **62.9 s / 68.2 s** |
+
+差 10 倍以上，坐实第 16 节的判断：慢的是单线程 bz2 解码，不是存储、不是网络。
+`make_payload.py --compress` 的默认值本来就是 `none`，发布口径统一到 `none`；
+bz2 只留作弱网省流量选项（多花 10 倍写入时间换 1.4 GB 下载）。
+
+### 17.2 去掉 4 个官方预装
+
+清单在 `build/patches/strip-preinstalled.txt`，脚本 `build/patches/p_strip_preinstalled.sh`：
+
+| 应用 | 包名 | 位置 |
+| --- | --- | --- |
+| OPPO 商城 | `com.oppo.store` | `my_stock/del-app/OPPOStore` |
+| 学习空间 | `com.oplus.studycenter` | `my_stock/del-app/StudyCenter` |
+| 我的一加 | `com.oneplus.member` | `my_stock/del-app/KeKeUserCenterMember` |
+| OS 众测 | `com.oplus.logtrial` | `system_ext/app/LogTrialCommercial`（zh label「OS 众测」） |
+
+删完重打：`my_stock` 3,819,110,400 B、`system_ext` 962,039,808 B，都在分区上限内。
+真机（A 槽）复核：4 个包名 `pm list packages` 全部查不到，镜像内目录也不存在。
+
+注意：删镜像只影响**新刷/恢复出厂**后的预装来源；已经装进 `/data/app` 的副本不会自动消失。
+
+### 17.3 一次卡开机的真因：重打分区丢了 SELinux 标签
+
+第一次去预装后写 A 槽，开机卡在 `post-fs-data`：
+`vdc checkpoint prepareCheckpoint` 等 56 s 被 SIGKILL（`status 22`）→
+`enter_default_mount_ns ... Failed to switch to default mount namespace` →
+之后一直 `Waiting for servicemanager.ready`。用开机菜单 `Direct boot (rescue) - slot _a` 也一样，
+说明与启动条目无关，是写进去的内容有问题。
+
+逐层排查结论：
+
+* 内容不缺：镜像解包回来与源树逐条 diff **0 行**，条目数 1053 / 3944 都对；
+* 真正差异在元数据：`dump.erofs --path=/etc` 显示原厂 `Xattr size: 16`，我们重打的 `Xattr size: 0`
+  —— `security.selinux` 全丢了。
+
+两个原因叠加：
+
+1. `fsck.erofs --extract` **默认不导出 xattr**（`--[no-]xattrs` 默认 off），必须显式加 `--xattrs`；
+2. 解包目标放在 `/mnt/e`（Windows drvfs）时，xattr、属主、权限都保不住（全变成 `777 1000:1000`）。
+   分区树必须落在 WSL 的 ext4 上。
+
+`system` 那条线一直没踩到，是因为它的树本来就在 ext4 上且带标签。
+
+脚本里补了三道闸门：树必须在非 `/mnt` 路径且 `/etc` 带 `security.selinux`；
+重打后用 `dump.erofs` 断言 `Xattr size != 0`；再解包与树逐条 diff 必须为 0。
+修好后重刷 A 槽：`_a` + `boot_completed=1`，`ls -Zd /my_stock/etc` 回到 `u:object_r:system_file:s0`。
+
+### 17.4 顺带记一笔：WSL 盘写满会静默截断解包
+
+期间 WSL 根盘一度 100%（196 G），`fsck.erofs --extract` 不报错但少解了 `/my_stock/etc` 与 3 个 app。
+所以脚本开头查剩余空间（<2 G 直接停），并按写死的条目数校验解包完整性。
