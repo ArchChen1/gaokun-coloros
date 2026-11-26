@@ -28,12 +28,15 @@ import java.util.zip.ZipFile;
 public class MainActivity extends Activity {
 
     private static final int REQ_PICK = 1001;
+    /** 安装交接前记下目标槽位，重启后据此判断「这次装成了没有」。 */
+    private static final String PENDING = "pending.json";
 
     private TextView mStatus;
     private TextView mDetail;
     private TextView mHint;
     private TextView mBtnDownload;
     private TextView mBtnLocal;
+    private TextView mBtnClean;
     private final Handler mUi = new Handler(Looper.getMainLooper());
 
     private volatile boolean mBusy;
@@ -51,6 +54,7 @@ public class MainActivity extends Activity {
         mHint = findViewById(R.id.tv_hint);
         mBtnDownload = findViewById(R.id.btn_download);
         mBtnLocal = findViewById(R.id.btn_local);
+        mBtnClean = findViewById(R.id.btn_clean);
 
         mStatus.setText("已是最新版本");
         mDetail.setText("");
@@ -69,8 +73,13 @@ public class MainActivity extends Activity {
             }
         });
         mBtnLocal.setOnClickListener(v -> pickLocal());
+        mBtnClean.setOnClickListener(v -> manualClean());
 
         mBtnDownload.setVisibility(View.GONE);
+        mBtnClean.setVisibility(View.GONE);
+
+        // 装完重启进新系统：把上一轮下载的包顺手删掉（判断依据见 afterBootCheck）
+        afterBootCheck();
     }
 
     // ---------------------------------------------------------------- 在线
@@ -335,6 +344,7 @@ public class MainActivity extends Activity {
         }
         mStatus.setText("已交给系统写入服务");
         mHint.setText("写入在后台进行，进度会显示在这里；完成后提示重启。");
+        writePending(currentSlot().equals("a") ? "b" : "a");
         pollStatus();
     }
 
@@ -371,6 +381,158 @@ public class MainActivity extends Activity {
                 mUi.postDelayed(this, 2000);
             }
         }, 1000);
+    }
+
+    // ---------------------------------------------------------------- 清理
+
+    private static String currentSlot() {
+        return getProp("ro.boot.slot_suffix", "").replace("_", "");
+    }
+
+    private void writePending(String targetSlot) {
+        try (FileOutputStream fos = new FileOutputStream(new File(getFilesDir(), PENDING))) {
+            fos.write(("{\"target\":\"" + targetSlot + "\"}").getBytes("UTF-8"));
+        } catch (Exception ignored) {
+            // 记不下来最多是这次不自动清理，不影响安装
+        }
+    }
+
+    /**
+     * 上电进系统后：如果这次真的装成了，就把上一轮的包删掉。
+     *
+     * 装成了 = 三件事同时成立：交接前记下的目标槽 == 现在跑的这个槽；该槽的写入日志里有
+     * kSuccess。任一不成立（引擎报错没写进去、写了但回滚到原槽、根本没装过）都不删，
+     * 让人还能重试。
+     */
+    private void afterBootCheck() {
+        new Thread(() -> {
+            File pend = new File(getFilesDir(), PENDING);
+            final boolean hadPending = pend.exists();
+            boolean installed = false;
+            long freed = 0;
+            if (hadPending) {
+                String target = readPendingTarget(pend);
+                installed = target != null && target.equals(currentSlot()) && statusHasSuccess();
+                if (installed) {
+                    freed = cleanCache();
+                }
+                //noinspection ResultOfMethodCallIgnored
+                pend.delete();
+            }
+            final boolean ok = installed;
+            final long f = freed;
+            mUi.post(() -> {
+                if (ok) {
+                    mStatus.setText("更新已生效，旧包已清理");
+                    mDetail.setText("释放 " + fmtGb(f));
+                    mHint.setText("安装完重启进新系统会自动清掉下载的 payload，不再白占空间。");
+                } else if (hadPending) {
+                    mHint.setText("上次更新没有生效（仍在原槽位），更新包已保留，可以重新安装。");
+                }
+                refreshCache();
+            });
+        }, "gk3-ota-clean").start();
+    }
+
+    private void manualClean() {
+        if (mBusy) {
+            return;
+        }
+        if (new File(getFilesDir(), "request").exists()) {
+            mHint.setText("写入服务还没取走请求，现在清理会打断安装。");
+            return;
+        }
+        long freed = cleanCache();
+        mStatus.setText("已清理更新包");
+        mDetail.setText("释放 " + fmtGb(freed));
+        mHint.setText("要再装就得重新下载 / 重新选包。");
+        refreshCache();
+    }
+
+    /** 后台算一下私有目录里还压着多少缓存包，有就显示清理按钮。 */
+    private void refreshCache() {
+        new Thread(() -> {
+            final long size = cacheSize();
+            mUi.post(() -> {
+                if (size > 0) {
+                    mBtnClean.setText("清理已下载包（" + fmtGb(size) + "）");
+                    mBtnClean.setVisibility(View.VISIBLE);
+                } else {
+                    mBtnClean.setVisibility(View.GONE);
+                }
+            });
+        }, "gk3-ota-size").start();
+    }
+
+    /** 只删下载缓存；status / pending / request 这些控制文件不碰。 */
+    private long cleanCache() {
+        File[] fs = getFilesDir().listFiles();
+        if (fs == null) {
+            return 0;
+        }
+        long freed = 0;
+        for (File f : fs) {
+            String n = f.getName();
+            if (!(n.endsWith(".bin") || n.endsWith(".bin.properties") || n.endsWith(".zip"))) {
+                continue;
+            }
+            long len = f.length();
+            if (f.delete()) {
+                freed += len;
+            }
+        }
+        return freed;
+    }
+
+    private long cacheSize() {
+        File[] fs = getFilesDir().listFiles();
+        if (fs == null) {
+            return 0;
+        }
+        long total = 0;
+        for (File f : fs) {
+            String n = f.getName();
+            if (n.endsWith(".bin") || n.endsWith(".bin.properties") || n.endsWith(".zip")) {
+                total += f.length();
+            }
+        }
+        return total;
+    }
+
+    private static String readPendingTarget(File f) {
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(f), "UTF-8"))) {
+            String s = r.readLine();
+            if (s == null) {
+                return null;
+            }
+            int k = s.indexOf("\"target\"");
+            if (k < 0) {
+                return null;
+            }
+            int q = s.indexOf('"', s.indexOf(':', k));
+            int q2 = s.indexOf('"', q + 1);
+            return (q < 0 || q2 < 0) ? null : s.substring(q + 1, q2);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean statusHasSuccess() {
+        File st = new File(getFilesDir(), "status");
+        if (!st.exists()) {
+            return false;
+        }
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(st), "UTF-8"))) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.contains("kSuccess")) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+            // 读不到就当没装成，包留着更安全
+        }
+        return false;
     }
 
     private static String fmtGb(long bytes) {

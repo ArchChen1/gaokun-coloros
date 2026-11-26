@@ -338,3 +338,30 @@ App 把 zip 复制到私有目录、抽 `payload.bin` 与 `payload_properties.tx
 `pm uninstall` / `pm uninstall --user 0` 都会被拒（`DELETE_FAILED_INTERNAL_ERROR` / "only root can delete system app"），
 所以 App 私有目录里那 7.55 GB 的本地包删不掉——adb 侧没有清数据通道。
 要么在 UI 里加一个「清理已下载包」按钮（顺手也能省空间），要么接受它挂在 /data。
+
+## 15. 装成功后自动清理下载包（2026-11-26 16:2x）
+
+**动机**：`/data/data/com.oplus.ota/files/` 里的包（在线 7.55 GB + 本地 7.55 GB 抽出的 `local_payload.bin`）
+装完就成垃圾，而 OPPO 禁止 adb 清系统应用数据（`pm clear` 被 `OplusClearDataProtectManager` 拦、
+`pm uninstall` 报 only root can delete system app），实测累积到 **16.67 GB** 删不掉。所以清理只能由 App 自己做。
+
+**判定「这次装成了」的三个条件（全中才删）**：
+1. `handOff()` 交接前在私有目录写 `pending.json`，记下目标槽（当前槽的另一半）；
+2. 冷启动时 `ro.boot.slot_suffix` == `pending.json` 里的目标槽 —— 说明确实从写过的槽起来了；
+3. `files/status` 全文里出现过 `kSuccess` —— 说明那次写入是引擎报成功的，不是半路失败。
+
+只满足部分就**不删**、并提示「上次更新没有生效，更新包已保留」：引擎报错、写了但回滚到原槽、
+或压根没装过（没有 `pending.json`）都不会误删，重试包还在。
+
+**实现**：`MainActivity.afterBootCheck()`（`onCreate` 里起后台线程跑，主线程只更新文案）+
+`cleanCache()`（只删 `files/` 下 `*.bin` / `*.bin.properties` / `*.zip`，`status`、`pending.json`、
+`request*` 这类控制文件一律不碰）。另外加了手动入口「清理已下载包（16.67 GB）」按钮，
+缓存为 0 时自动隐藏；写入服务还没取走 request 时禁用，避免删掉正在用的 payload。
+
+**为什么只在打开更新页时清，而不是开机广播**：App 要在 `BOOT_COMPLETED` 里删 7.55 GB 需要多一个
+receiver + 权限，且删包时机不受控；更新页本来就是用户看结果的地方。等 payload 落点改到
+`/data/ota_package` 后，那一步改由 `gk3otad`（init 服务）在开机时清，权限天然更顺。
+
+**实测**：`adb install -r` 新 APK（29,284 B，sha `2a19694d…`）→ 打开页面即显示
+「清理已下载包（16.67 GB）」→ 点击 → 「已清理更新包 释放 16.67 GB」，`/data` 可用空间 53 GB，
+按钮随之消失。自动清理那条路径要靠下一轮真安装验证（需再跑一次 A→B，约 20 分钟）。
