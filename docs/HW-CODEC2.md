@@ -85,8 +85,89 @@ SERIAL=192.168.1.247:5555 bash vendor/gaokun-android/scripts/verify-hw-codec2.sh
 
 备份 sha 与 `parts/vendor.img.pre_c2` 完全一致，等于"设备上那块就是这个基座"，所以写回是可逆的。
 
-## 6. 待办（恢复这项工作时）
+## 7. 2026-11-27 定位到真因：odm 的 libui 遮蔽了 vendor 的 libui
 
-- 跑一次 `verify-hw-codec2.sh`，取第 3、4、5 步的真实结果，再决定方向。
-- 若确定是 userspace 侧，候选是回到上游那套打满补丁的 `external/v4l2_codec2` 构建（修补 3/5/7 + `patches/android/v4l2-codec2/0001..0006`），而不是继续在 vendor 里缝。
+第 2 节把 rc 修好之后服务仍起不来，这次抓到了确切原因，**不是内核、不是 seccomp、也不是组件匹配**。
+
+### 7.1 现象
+
+```
+F linker : CANNOT LINK EXECUTABLE "/vendor/bin/hw/android.hardware.media.c2-service-v4l2":
+  cannot locate symbol "_ZN7android19GraphicBufferMapper15setSmpte2094_50E…"
+  referenced by "/vendor/lib64/libcodec2_vndk.so"
+```
+
+`init.svc.android-hardware-media-c2-v4l2-hal = restarting`，每 5 s 崩一次；
+binder 上只有 `IComponentStore/software`，`dumpsys media.player` 里 `c2.v4l2.*` 一个都没有。
+门控属性、iris 节点属主（`media:camera`）、扩展 seccomp 策略全部是绿的。
+
+### 7.2 真因
+
+`GraphicBufferMapper::setSmpte2094_5` 由 `libui.so` 提供。设备上有四份 libui：
+
+| 路径 | 大小 | 来源 | 有 setSmpte2094_5 |
+|---|---|---|---|
+| `/odm/lib64/libui.so` | 480,760 | ColorOS 自带 | **没有** |
+| `/vendor/lib64/libui.so` | 444,592 | crDroid 构建 | 有 |
+| `/system/lib64/libui.so` | 436,360 | ColorOS 自带 | 有 |
+| composer apex | 461,016 | ColorOS 自带 | 有 |
+
+而 `/linkerconfig/ld.config.txt` 的 `[vendor]` 段：
+
+```
+namespace.default.search.paths  = /odm/${LIB}
+namespace.default.search.paths += /vendor/${LIB}
+```
+
+**odm 排在 vendor 前面**。于是 crDroid 编的 `libcodec2_vndk.so` 绑到了 OPPO 那份旧 libui 上，
+缺一个符号，整个可执行文件链接失败。三份 libui 的 `.gnu.hash` 都查过，不是哈希表的问题。
+
+### 7.3 为什么不换掉 odm 的 libui
+
+量过：odm libui 导出 770 个符号、vendor 564 个，odm 独有的 253 个**全是 WEAK 模板实例与 vtable**，
+强符号（GLOBAL FUNC/OBJECT）独有数为 **0**。所以纯从符号看换掉是安全的。
+
+但 odm 那份被显示、相机等所有 vendor HAL 共用，两份 libui 明显不是同一 AOSP 快照
+（vendor 侧多出 `DependencyMonitor`、`PictureProfileHandle`、`getStride` 等较新的 API），
+换掉等于给整条图形栈换底座，风险不可控。**否决。**
+
+### 7.4 采用的修法：把那一个引用改成 WEAK
+
+`build/patches/p_codec_libui_weak.py` + `build/patch_vendor_codec_libui.sh`：
+把 `libcodec2_vndk.so` 的 `.dynsym[56]` 的 `st_info` 由 `0x12`(GLOBAL) 改成 `0x22`(WEAK)，
+**只动 1 字节**，文件长度、权限、属主、`vendor_file` 标签都不变。
+bionic 对未解析的 WEAK 符号放行（GOT 置 0），对 GLOBAL 才报 cannot locate symbol。
+
+支撑这个修法的三条实测：
+
+1. **整个 C2 闭包只缺这 1 个符号**。逐库核对 HAL 本体、`libcodec2_{vndk,aidl,hal_common}`、
+   `libv4l2_codec2_{common,components,v4l2}` 对 libui 域符号的引用；
+   另外几个 `android::ColorUtils::*` 是 `libstagefright_foundation.so` 提供的，不缺。
+2. **该符号在库里只有 1 处调用**（`llvm-objdump-18` 反汇编，0x5aeac），
+   位于一个内部的 HDR 动态元数据写入函数（构造 `optional<vector<uint8_t>>` 后调用），
+   `libcodec2_vndk` 没有导出任何 Smpte2094_5 相关 API。
+3. **三个 v4l2 组件库对 Smpte2094 的引用数都是 0** —— 这条路根本走不到。
+   iris 只吃 8 位 NV12，没有 HDR 编解码。
+
+风险边界：万一将来有组件真的走到这条路，会跳到空指针，**只崩 C2 HAL 这一个进程**，
+不影响显示与相机；回滚就是把 vendor 换回 `dd574c17…`。
+
+### 7.5 产物
+
+- `work/parts_codec/vendor.img` 536,870,912 B（尺寸不变），
+  sha `6fa870afb7c173d5f3771e0ba83fefa6bbb24f391f8ae37d648a87a07187821c`，e2fsck clean。
+- 增量包 `work/payload_codec_delta/`：**308 MiB**（vendor 128 ops + 其余 12 分区各 1 条 SOURCE_COPY），
+  离线重拼 8.95 GiB 全对（`PAYLOAD_VERIFY_PASSED`）。
+- 源账本 `work/manifest-src-codec.json`（vendor 回退为 `dd574c17…`）。
+
+### 7.6 刷入后要验的
+
+链接成功只是第一关，第 4 节那张判据表仍然要走完：
+`IComponentStore/default` 在不在 → `dumpsys media.player` 是不是 3 解码 + 2 编码 →
+真解一段 → 真编一段（`screenrecord --codec-name c2.v4l2.avc.encoder`，要亮屏）。
+本机没有 root，读不到 dmesg，`cp-nonpixel: CB15 ready` 与 iris 报错这两项只能记为跳过。
+
+## 8. 遗留待办
+
+- 若链接修好后组件仍为 0 或真解失败，候选是回到上游那套打满补丁的 `external/v4l2_codec2` 构建（修补 3/5/7 + `patches/android/v4l2-codec2/0001..0006`），而不是继续在 vendor 里缝。
 - 相机录像依赖硬件编码器，本项不解决，录像功能就不完整；相机"官方 App 打不开"是另一个问题（provider 只枚举到 1 个后摄，官方 App 取前摄 characteristics 拿到 null 触发 NPE，第三方相机可用）。
