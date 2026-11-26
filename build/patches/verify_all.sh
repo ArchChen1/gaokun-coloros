@@ -26,7 +26,7 @@ python3 "$ROOT/tools/ota/parts_manifest.py" verify --manifest "$MAN" || FAIL=1
 
 say "== 2. 关键分区 sha 钉死（设备实证值）"
 declare -A PIN=(
-  [system]=98e7ebe3a0c1b978c5c60482297c3013c6b7a4fbff206224597f9c07b051e5b3
+  [system]=2e224faaf8372c22d6d347bf451b512c70690cde70f34c222dd32f60d40a9b68
   [vendor]=dd574c1756496e2fdf598748600da5229862fdef3a1bc8a591a5685f08c0defb
   [my_engineering]=ce71e4b632eac3f65ccb5bbfaddad0ba9721ffa1511a88a729637c34baa7e6bb
 )

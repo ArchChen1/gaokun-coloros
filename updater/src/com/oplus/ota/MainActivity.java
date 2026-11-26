@@ -174,11 +174,30 @@ public class MainActivity extends Activity {
                     });
                 });
                 final boolean ok = pl.sha256.equalsIgnoreCase(sha);
+                final File props = new File(getFilesDir(), pl.file + ".properties");
+                String perr = null;
+                if (ok) {
+                    try {
+                        Downloader.fetch(url + ".properties", props);
+                    } catch (Exception e) {
+                        perr = e.toString();
+                    }
+                }
+                final String fperr = perr;
                 mUi.post(() -> {
                     mBusy = false;
                     mDetail.setText("");
-                    if (ok) {
+                    if (ok && fperr == null) {
                         markReady(out, pl);
+                    } else if (ok) {
+                        //noinspection ResultOfMethodCallIgnored
+                        out.delete();
+                        props.delete();
+                        mStatus.setText("缺 payload 属性文件，已删除");
+                        mDetail.setText(fperr);
+                        mHint.setText("服务端要一并提供 " + pl.file + ".properties。");
+                        mBtnDownload.setText("下载更新包");
+                        mBtnDownload.setVisibility(View.VISIBLE);
                     } else {
                         //noinspection ResultOfMethodCallIgnored
                         out.delete();

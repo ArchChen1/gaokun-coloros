@@ -64,6 +64,29 @@ final class Downloader {
         return sha256Hex(out);
     }
 
+    /** 拉一个小文件（OTA 的 payload_properties.txt）。引擎要 FILE_HASH / METADATA_HASH / METADATA_SIZE，缺一个就 kPayloadHashMismatch。 */
+    static void fetch(String url, File out) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(10000);
+        c.setReadTimeout(15000);
+        try {
+            int code = c.getResponseCode();
+            if (code != 200) {
+                throw new IOException("属性文件下载失败（HTTP " + code + "）");
+            }
+            try (InputStream in = c.getInputStream();
+                 FileOutputStream fos = new FileOutputStream(out)) {
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    fos.write(buf, 0, n);
+                }
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
     static String sha256Hex(File f) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         try (InputStream in = new java.io.FileInputStream(f)) {

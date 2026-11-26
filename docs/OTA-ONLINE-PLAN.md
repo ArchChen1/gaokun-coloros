@@ -254,3 +254,28 @@ payload `7,266,354,314 B`（6.77 GiB，原始 9.37 GiB，压缩比 0.722，耗�
 同一小样换 `bz2` 与 `none` 都 `kSuccess`。结论：这台设备的 `update_engine` 不带 XZ 解压路径，
 **发布压缩只能用 bz2**（全量 bz2 -9：8,108,730,778 B / 7.55 GiB，压缩比 0.806，出包 636 s，
 真机写入 709 s，`kSuccess`）。xz 只能留给「以后换引擎」时再评估。
+
+## 12. 端到端闭环：设置里点「安装」→ 写另一槽 → 重启落新槽（2026-11-26 15:2x）
+
+两个方向各跑一遍，都是纯 UI 操作（只靠 adb 点按钮和读状态，没有手工写引擎命令）：
+
+- **B → A**：在线检查更新 → 下载 9.11 GB → sha 校验 → 「更新包已就绪」→ 「安装」→ `gk3otad` 取 request →
+  `update_engine_client --update --follow` → `rc=0`、`UPDATED_NEED_REBOOT` → 重启落 `_a`。
+- **A → B**：同一套点法，重启落 `_b`。两槽最终都是 system `2e224faa`、APK sha `4066ac27…`、`gk3otad.sh` 1699 B。
+
+**这轮抓到的两个真 bug**
+
+1. **`kPayloadHashMismatchError (10)`**：在线下载只落了 `payload.bin`，没落 `payload.bin.properties`，
+   `gk3otad` 拿到的 `props=` 是空路径 → 引擎缺 `FILE_HASH`/`METADATA_HASH`/`METADATA_SIZE`，67 ms 就报哈希不符。
+   修法：`Downloader.fetch()` 在 sha 校验通过后再拉 `<file>.properties` 存到同目录，缺属性文件就把包删掉并提示；
+   服务端必须和 payload 一起发布 properties（`make_payload --zip` 与静态发布都已经是这样）。
+2. **`reject: bad payload path`**：App 给的是 `/data/user/0/com.oplus.ota/…`，白名单只写了 `/data/data/…`。
+   修法见第 11 节（白名单两条都放行）。
+
+**enforcing 的证据又补了一条**：UI 安装时 logcat 里是
+`avc: denied { call } for scontext=u:r:update_engine:s0 tcontext=u:r:su:s0 tclass=binder permissive=1`。
+也就是说现在 `gk3otad`（`u:r:su:s0`）调引擎是靠 permissive 放过的，转 enforcing 时必须换成专用域 + 显式 allow。
+
+**一条操作坑**：`adb install` 的 `com.oplus.ota` 会盖住 priv-app 的系统版（`pm path` 指 `/data/app/…`），
+且跨槽共享；`pm uninstall` 后才回落 `/system/priv-app/OtaUpdater/OtaUpdater.apk`（flags `SYSTEM`）。
+另外 OPPO 的 `pm clear` 对 adb 是禁的（`OplusClearDataProtectManager` 拦截），清数据只能走 uninstall。

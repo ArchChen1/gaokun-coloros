@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-26T14:10:10",
+ "generated": "2026-11-26T15:09:40",
  "assertions": "scripts/current_verify.sh 全绿",
  "invariants": {
   "vendor_vulkan_freedreno_sha256": "7619b1286b7d0b2d697e0c48b6a471ab7f439eee0523ce1820fee6ba612b1d90",
@@ -12,8 +12,10 @@
   "system": {
    "path": "/home/cenmin/coloros-build/current/parts/release/system.erofs",
    "bytes": 1137397760,
-   "sha256": "98e7ebe3a0c1b978c5c60482297c3013c6b7a4fbff206224597f9c07b051e5b3",
+   "sha256": "2e224faaf8372c22d6d347bf451b512c70690cde70f34c222dd32f60d40a9b68",
    "layers": [
+    "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)",
+    "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)",
     "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)",
     "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)",
     "release_cleanup(设备实证: 2026-11-26 起 B 槽就绪, 已开机验证)"
