@@ -29,6 +29,8 @@ declare -A PIN=(
   [system]=452d2ce1a0dcb01052f20d786a10d41f339b32ae425796b79b08f940a8020d50
   [vendor]=dd574c1756496e2fdf598748600da5229862fdef3a1bc8a591a5685f08c0defb
   [my_engineering]=ce71e4b632eac3f65ccb5bbfaddad0ba9721ffa1511a88a729637c34baa7e6bb
+  [my_stock]=8e6ecdd588c0fcf476c94ce36aaa8fe5ceed7615b3796a0cc501cb5f83ebd459
+  [system_ext]=8a2c1d462e7391e2794933c957ebc4786e9a1d300d058ad633ae72f40508fed0
 )
 for n in "${!PIN[@]}"; do
     p=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['parts']['$n']['sha256'])" "$MAN")
