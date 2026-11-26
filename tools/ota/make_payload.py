@@ -52,6 +52,7 @@ CHUNK = 4 << 20    # 单个 InstallOperation 覆盖的原始字节数
 COMPRESS = "none"  # none / xz / bz2
 LEVEL = 3
 ZERO = True
+MINOR_VERSION = 0  # 全量 0；--source-manifest 时默认 4（动态分区增量）
 
 
 def _sha256_file(path):
@@ -96,7 +97,9 @@ def build_manifest(entries, spool_f=None, pool=None, block_size=BLOCK, source=No
     """
     m = um.DeltaArchiveManifest()
     m.block_size = block_size
-    m.minor_version = 0
+    # 全量包用 minor 0（实测可行）；增量包必须声明支持增量的 minor 版本，
+    # 否则引擎在解析 manifest 阶段就报 kUnsupportedMinorPayloadVersion(45)。
+    m.minor_version = MINOR_VERSION
     data_offset = 0
     plan = []
     copied, changed = [], []
@@ -265,13 +268,16 @@ def main():
                     help="额外产出标准 A/B OTA zip（payload.bin + payload_properties.txt + META-INF 占位）")
     ap.add_argument("--source-manifest", default="",
                     help="上一版账本：给了就出增量包，未变分区走 SOURCE_COPY，只发变化分区的数据")
+    ap.add_argument("--minor-version", type=int, default=-1,
+                    help="manifest minor_version；默认全量 0、增量 4")
     a = ap.parse_args()
-    global SNAPSHOT, DYNAMIC_GROUP, COMPRESS, LEVEL, ZERO, CHUNK
+    global SNAPSHOT, DYNAMIC_GROUP, COMPRESS, LEVEL, ZERO, CHUNK, MINOR_VERSION
     SNAPSHOT = a.snapshot
     DYNAMIC_GROUP = a.group or DYNAMIC_GROUP
     COMPRESS = a.compress
     LEVEL = a.level
     ZERO = not a.no_zero
+    MINOR_VERSION = a.minor_version if a.minor_version >= 0 else (4 if a.source_manifest else 0)
     CHUNK = a.chunk << 20
     if CHUNK % BLOCK:
         raise SystemExit(f"--chunk {a.chunk} MB 不是 {BLOCK} 字节的整数倍")
