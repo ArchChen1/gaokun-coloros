@@ -212,3 +212,22 @@ if (签名存在 && !isDebugMode && !isSystemApp
 结论：要让「设置 → 软件更新 → 点一下就装」成立，`com.oplus.ota` **必须预装进镜像**（平台签名 + priv-app + 白名单），
 走 `UpdateEngine` binder；否则 UI 只能做到「下载 + 校验 + 待安装」，写入仍要人肉进 A 槽。
 
+
+## 10. 预装更新器版本（system = a4b91f73，2026-11-26）
+
+**镜像变化**：`system_patched.erofs` 内容 1,076,695,040 B（truncate 至 1,137,397,760 B），sha `a4b91f7305641b51c993f625063be8074b81674953242a721d1b7cc1fe2ed22e`。
+新增三样东西：`system/priv-app/OtaUpdater/OtaUpdater.apk`（`com.oplus.ota`，25,188 B，sha `d419956fdc83…`）、`system/bin/gk3otad.sh`(0755)、`system/etc/init/gk3otad.rc`。
+同时把早期充电图标实验留在 `system/etc/gk3-charge/SystemUI.apk`（99 MB）移出树（该副本运行时不加载，已归档到 `/home/cenmin/archive/gk3-charge-20261126`），否则新 APK 会顶破分区。
+
+**账本与闸门**：`verify_all.sh` 第 2 层 system 钉死值改成 `a4b91f73`，第 3 层新增「镜像内更新器 + 写入服务」（挂载后查 priv-app apk、`bin/gk3otad.sh`、`etc/init/gk3otad.rc`）。主账本与 `inputs/manifest-2026-11-26-release.json` 已同步，13/13 自证通过。
+
+**压缩出包（首次带压缩）**：`--compress xz --level 6 --jobs 8`，块 4 MiB，2407 个 op 全为 `REPLACE_XZ`（没有触发 ZERO 块）。
+payload `7,266,354,314 B`（6.77 GiB，原始 9.37 GiB，压缩比 0.722，耗时 465 s），sha `5fa58d2830…`，
+`METADATA_SIZE=140050`，`FILE_HASH=X6WNKDBq…`。离线自检 `verify_payload.py` → `PAYLOAD_VERIFY_PASSED`（解包重拼 13 分区逐分区 sha 一致、extents 无空洞、整份 sha 对上前文）。
+
+标准 zip：`update.zip` `7,266,355,585 B`（比 payload 大 1,271 B），sha `0861b704bf…`，`payload.bin` 以 `ZIP_STORED` + Zip64 内嵌。
+发布清单 `work/release_a4b91/index.json` 同时登记 payload 与 zip（`payload.sha256` / `payload.zip.sha256`），`signature` 仍为 null。
+
+**为什么 Windows 侧出包要换一份账本**：`make_payload.py` 在 Windows python 下读不到 `/home/...` 绝对路径，`work/manifest-win.json` 是把同一份账本里的路径映射成 `\\wsl.localhost\Ubuntu-24.04\home\...` 的一次性输入副本，不入库。
+
+**刷写流程（与第七节一致，只是 payload 带压缩）**：push payload + props 到 `/data/local/tmp` → 开机菜单选 `Direct boot (rescue) - slot _a`（A 槽调试版有 root 通道）→ 触发 `gk3run` 跑 `update_engine_client --update --follow` 写 `_b` → 引擎 `markSuccessful` 后重启落回 B → 复核预装 APK、`init.svc.gk3otad=running`、13 分区 sha。
