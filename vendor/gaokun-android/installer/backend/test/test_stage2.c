@@ -325,7 +325,7 @@ static void test_esp(void)
     char out[1024];
     const char *mid = "0123456789abcdef0123456789abcdef";
     const char *want =
-        "title      " GK3W_EGO_TITLE " \xe2\x80\x94 slot _b\n"
+        "title      " GK3W_EGO_TITLE " - slot _b\n"
         "version    gaokun3-slot-b\n"
         "sort-key   zandroidb\n"
         "options    console=tty0 quiet androidboot.slot_suffix=_b\n"
