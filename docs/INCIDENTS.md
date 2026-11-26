@@ -100,9 +100,26 @@ ART 需要不压缩才能 mmap），`zipalign -c 4` 通过；jar 内**只有 cla
 jadx fallback 复核字节码，分支与设计完全一致。产物 `work/charge/oplus-services-aligned.jar`
 （30,758,288 B，sha 见构建日志）。
 
-**待做**：把 jar 放进 system 树、清掉 `oat/arm64/oplus-services.{odex,vdex}` 旧产物、
-重打 system.erofs → 出增量包（只有 system 变）→ 刷写验证。
-**验证必须插上充电器**（当前 `gaokun-ec-adapter online=0`，设备在用电池）。
+**落地（2026-11-27，已刷入真机）**：
+
+1. jar 按原权限装进树（`644 root:root`，`u:object_r:system_file:s0`），
+   同时删掉 `oat/arm64/oplus-services.{art,odex,vdex}` 及各自 `.fsv_meta`——
+   jar 变了，旧编译产物必须一起走，否则 ART 仍跑旧代码。
+   `oplus-services` **不在 boot image 里**（无 `boot-oplus-services.*`），删 oat 安全。
+2. `build/rebuild_system_patched.sh` 的白名单加两项：`system/framework/oplus-services.jar`
+   与 `system/framework/oat/arm64: oplus-services`。重打后 fsck clean、
+   解包全树回比 **0 差异**，镜像内 jar sha `6dee37bb3eeb5900…`。
+   镜像仍是 1,137,397,760 B（删 oat 省下的空间被 truncate 补回），sha `9db7604bb45d20e3…`。
+3. 增量包 **1.00 GiB**（全量 8.90 GiB）：system 272 ops + 其余 12 分区各 1 条 SOURCE_COPY，
+   共 284 ops，`minor_version=4`。离线重拼 9.09 GiB 全对（`PAYLOAD_VERIFY_PASSED`）。
+4. 真机写入 **44.2 s**，`rc=0`，重启 A 槽 `boot_completed=1`；
+   设备上 `/system/framework/oplus-services.jar` sha 与产物一致，oat 已无 `oplus-services.*`。
+5. **关键判据**：`dumpsys activity broadcasts` 里 BATTERY_CHANGED 的 extras
+   现在是 **`notifycode=0`**（补丁前是 `-1`）。未插电分支已确认走通。
+
+**仍待验收**：插上充电器后看状态栏是否出现充电图标。
+当前 `gaokun-ec-adapter online=0`，设备在用电池，插电分支（`plugged!=0 && status==2 → 0`）
+只能由用户物理插电触发。HAL 依旧 `getIChargerService fail`，属预期——B 方案本就不依赖它。
 
 ## 6. 开机 12 s 卡到 70 多秒
 
