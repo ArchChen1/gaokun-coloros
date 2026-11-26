@@ -167,7 +167,100 @@ bionic 对未解析的 WEAK 符号放行（GOT 置 0），对 GLOBAL 才报 cann
 真解一段 → 真编一段（`screenrecord --codec-name c2.v4l2.avc.encoder`，要亮屏）。
 本机没有 root，读不到 dmesg，`cp-nonpixel: CB15 ready` 与 iris 报错这两项只能记为跳过。
 
-## 8. 遗留待办
+## 8. VINTF 未声明导致注册被拒（已修，2026-11-27）
+
+### 8.1 现象与取证
+
+WEAK 补丁刷入后 `CANNOT LINK` 消失、HAL 常驻，但 `IComponentStore/default` 仍 not found。
+取证卡在日志：本机 main 缓冲默认 **256 KiB**，ColorOS 日志量下只能存约 13 秒，
+HAL 在开机 16.7 s 启动的日志早被冲掉；`logcat -G` **重启即复原**。
+最后设 `persist.logd.size=32M`（可持久，调试用，可随时删）才盖住开机段，拿到：
+
+```
+D Instantiating Codec2's V4L2 IComponentStore service...
+E Cannot register Codec2's IComponentStore service with instance name
+  "android.hardware.media.c2.IComponentStore/default"
+```
+
+**中间没有 `Cannot create`** ⇒ `V4L2ComponentStore::Create()` 成功、设备节点已找到，
+只有 `addService` 被拒。`getenforce` = Permissive，排除 SELinux。
+
+### 8.2 真因与修法
+
+全盘扫 vintf 目录，声明 `android.hardware.media.c2` 的只有
+`/system/etc/vintf/manifest/manifest_media_c2_software.xml`（软解，type=framework），
+**vendor 侧一个分片都没有**。servicemanager 对 vendor 进程注册 AIDL 服务要校验 VINTF 声明。
+
+补 `/vendor/etc/vintf/manifest/android.hardware.media.c2-service-v4l2.xml`：
+`format="aidl"` / `version=1`（HAL 链 `android.hardware.media.c2-V1-ndk.so`）/
+`fqname=IComponentStore/default`，属主权限标签照现有 thermal 分片。
+脚本 `build/patch_vendor_c2_vintf.sh`，产物 vendor sha `7b571d63…`（尺寸不变）。
+
+刷入后：`service registered` 日志出现、`service check` found、
+`Codec2Client: Available Codec2 services: "default" "software" "__ApexCodecs__"`。
+
+## 9. odm 空壳 media_codecs_c2.xml 遮蔽 vendor 清单（已修，2026-11-27）
+
+### 9.1 现象
+
+注册过了，组件仍 0 个。框架日志：
+
+```
+Codec2InfoBuilder: component 'c2.v4l2.avc.decoder' not found in xml
+MediaCodecsXmlParser: parsing /odm/etc/media_codecs_c2.xml...
+```
+
+`/vendor/etc/media_codecs_c2.xml`（6904 B，5 个组件）**从未被打开**。
+
+### 9.2 真因
+
+`searchMediaCodecsXmlPath` 按 `/odm/etc` → `/vendor/etc` → `/system/etc` 找同名文件，
+**命中第一个就停**。OPPO 在 odm 放了 791 B 空壳，全文只有 `<Included></Included>`，
+零条声明 ⇒ codec map 为空 ⇒ HAL 枚举出的组件全被 `Codec2InfoBuilder.cpp:543` 跳过。
+软解不受影响，因为它走的是另一个文件名（APEX 的 `media_codecs.xml`），两条搜索互不干扰。
+
+**这是本项目第二次踩 odm 遮蔽 vendor**（第一次是第 7 节的 `libui.so`）。
+以后凡涉及同名文件，先查 `/odm` 有没有同名件。
+
+### 9.3 修法与产物
+
+删掉那个空壳（不选"把 vendor 内容拷进 odm"，那会留下改 vendor 永不生效的坑）。
+脚本 `build/patches/p_odm_drop_empty_c2_xml.sh`，闸门包括：删前把当前镜像解包与树逐条 diff 必须为 0、
+被删文件必须是 791 B 且无声明、重打后该文件不在镜像里、充电两个 so 仍在、UUID 保持、
+解包回比差异必须正好是少了这一个文件。
+产物 odm sha `e8856c58…`（2,131,329,024 B 不变），增量 1.98 GiB / 44.7 s / rc=0。
+
+⚠️ `dump.erofs --path=<不存在的路径>` **也返回 0**（只打 `<E> read inode failed`），
+判存在与否必须看输出里有没有 `regular file`，不能看退出码。
+
+### 9.4 验收结果
+
+- **组件齐了**：`c2.v4l2.{avc,hevc,vp9}.decoder` + `c2.v4l2.{avc,hevc}.encoder`，
+  3 解码 2 编码，`owner: codec2::default`、`hw-accelerated: 1`、`rank: 128`。
+  解析路径已变成 `parsing /vendor/etc/media_codecs_c2.xml`。
+- **硬解通过**：HAL 侧走完完整周期 `Idle => Decoding => Draining => Idle`，
+  实测分辨率 1920x1088、1152x416、3072x1280；HEVC 有 `merged 89 B CSD + 129501 B frame`。
+- **硬编未通**：`screenrecord --codec-name c2.v4l2.avc.encoder` rc=0 但
+  `recorded 0 frames`，mp4 的 `mdat` 长度为 1、时长 0。真因在 HAL：
+
+  ```
+  V4L2Device: (OUTPUT_MPLANE)Failed to set format (format_fourcc=0x32314d4e)
+  ```
+
+  `0x32314d4e` = `'NM12'` = `V4L2_PIX_FMT_NV12M`（**多平面** NV12），
+  而 iris 只收单平面 `NV12`（枚举时那两条 `Unhandled pixelformat NV12 / Q08C` 也是同一处不认）。
+  对应上游 `patches/android/v4l2-codec2/0006`（单平面输入按驱动 `sizeimage` 给长度）
+  及其配套的格式选择改动 —— **我们这份 C2 二进制没带上游那批补丁**。
+- 无 root，CB15 与 iris 内核报错两项仍记为跳过。
+- 本机没有 `/system/bin/gaokun3-decode-test`，真解改用第三方 App 触发 + HAL 日志判定。
+
+### 9.5 硬编下一步
+
+要通硬编，只能回到上游那套打满补丁的 `external/v4l2_codec2` 重新构建
+（`patches/android/v4l2-codec2/0001..0006`），而不是继续在 vendor 里缝二进制。
+相机录像依赖硬件编码器，此项不解决录像就不完整。
+
+## 10. 遗留待办
 
 - 若链接修好后组件仍为 0 或真解失败，候选是回到上游那套打满补丁的 `external/v4l2_codec2` 构建（修补 3/5/7 + `patches/android/v4l2-codec2/0001..0006`），而不是继续在 vendor 里缝。
 - 相机录像依赖硬件编码器，本项不解决，录像功能就不完整；相机"官方 App 打不开"是另一个问题（provider 只枚举到 1 个后摄，官方 App 取前摄 characteristics 拿到 null 触发 NPE，第三方相机可用）。
