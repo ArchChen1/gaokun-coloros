@@ -23,6 +23,7 @@ import os
 import struct
 import sys
 import tempfile
+import zipfile
 from concurrent.futures import ProcessPoolExecutor
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -222,6 +223,8 @@ def main():
     ap.add_argument("--no-zero", action="store_true", help="不把全零块写成 ZERO")
     ap.add_argument("--jobs", type=int, default=0, help="压缩并行进程数（0 = CPU 数）")
     ap.add_argument("--spool", default="", help="压缩块临时文件路径（默认系统临时目录）")
+    ap.add_argument("--zip", default="",
+                    help="额外产出标准 A/B OTA zip（payload.bin + payload_properties.txt + META-INF 占位）")
     a = ap.parse_args()
     global SNAPSHOT, DYNAMIC_GROUP, COMPRESS, LEVEL, ZERO, CHUNK
     SNAPSHOT = a.snapshot
@@ -379,6 +382,30 @@ def main():
     print(f"写出 {a.out}")
     print(f"写出 {props_path}")
     print(json.dumps(props, indent=1))
+
+    if a.zip:
+        # 标准 A/B OTA zip：payload.bin + payload_properties.txt + META-INF 两个占位脚本。
+        # payload.bin 用 store（内部已经压过，deflate 只会白费 CPU）；>4 GiB 自动走 Zip64。
+        zip_path = a.zip
+        os.makedirs(os.path.dirname(os.path.abspath(zip_path)), exist_ok=True)
+        stub_binary = ("#!/sbin/sh\n"
+                       "# A/B OTA：由 update_engine 消费 payload.bin，此脚本只作占位\n"
+                       'exec /system/bin/update_engine_sideload --payload=file://"$2"\n')
+        stub_script = "# Dummy OTA script (A/B package, payload-based)\n"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED,
+                             allowZip64=True, strict_timestamps=False) as z:
+            z.writestr("META-INF/com/google/android/update-binary", stub_binary)
+            z.writestr("META-INF/com/google/android/updater-script", stub_script)
+            z.writestr("payload_properties.txt",
+                       "".join(f"{k}={v}\n" for k, v in props.items()))
+            zi = zipfile.ZipInfo("payload.bin", date_time=(1980, 1, 1, 0, 0, 0))
+            zi.compress_type = zipfile.ZIP_STORED   # 已压过的内容再 deflate 只是白烧 CPU
+            zi.file_size = file_size
+            with open(a.out, "rb") as src, z.open(zi, "w", force_zip64=True) as dst:
+                for chunk in iter(lambda: src.read(8 << 20), b""):
+                    dst.write(chunk)
+        zip_size = os.path.getsize(zip_path)
+        print(f"写出 {zip_path}（{zip_size/2**30:.2f} GiB，payload 以 store 方式内嵌）")
 
 
 if __name__ == "__main__":

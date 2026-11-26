@@ -185,3 +185,30 @@ if (签名存在 && !isDebugMode && !isSystemApp
 2. 复用已验证的 `apply_b.sh`（写 `_b` → 回读 sha → 切槽），UI 上给进度与阶段文案（下载 / 校验 / 写入 / 待重启）。
 3. 错误回滚：写一半失败 → `rollback.sh`，并把 `/misc` 快照 dd 回去。
 4. S3 打包（13 镜像 + index.json + 签名）与分发；发版前把 `persist.sys.oplus.debug` 置回 `false`、预装进 `my_product`。
+
+## 9. 发布形态改为「payload + 标准 OTA zip」（2026-11-26 决定）
+
+原来的清单描述的是 13 个分区镜像（dd 路线的产物）。现在引擎路线已经端到端跑通，发布单元改成**一个 payload**，
+`make_release.py` 也因此支持单条目登记。
+
+- `make_payload.py --zip <path>`：除了 `payload.bin` + `.properties`，再产出一份标准 A/B OTA zip，
+  内含 `payload.bin`（**store**，不再 deflate，内部已压过）、`payload_properties.txt`、
+  `META-INF/com/google/android/{update-binary,updater-script}` 两个占位文件；>4 GiB 自动 Zip64。
+- `make_release.py --payload <payload.bin> [--zip <zip>]`：`index.json` 里多一个 `payload` 对象
+  （`file/size/sha256/file_hash/metadata_size`，可选 `zip`），`parts` 保留给 dd 路线，引擎路线下为空。
+- 体积关系：zip ≈ payload + 3 KB（store 模式不产生二次压缩收益，换来的是通用性）。
+
+**执行器的现实约束（2026-11-26 核实）**
+
+`installer/` 那套是 **Windows 端整机重装工具**（需要 USB 写 GPT/boot/super/ESP），不是设备内的写入器；
+本机没有 USB 传输通道，所以它不能当 UI 的后端。设备内能写 B 槽的只有：
+
+| 通道 | 谁在跑 | 前置条件 |
+|---|---|---|
+| `update_engine` + `UpdateEngine` binder | root 守护进程 | 调用方要有系统权限（原厂 Cota 就是这么做的） |
+| `update_engine_client` 命令行 | root | 需要 root 通道（当前只有 A 槽调试版有） |
+| dd 写分区 | root | 同上 |
+
+结论：要让「设置 → 软件更新 → 点一下就装」成立，`com.oplus.ota` **必须预装进镜像**（平台签名 + priv-app + 白名单），
+走 `UpdateEngine` binder；否则 UI 只能做到「下载 + 校验 + 待安装」，写入仍要人肉进 A 槽。
+

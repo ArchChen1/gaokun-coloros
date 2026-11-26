@@ -53,18 +53,34 @@ def find_image(parts_dir, name):
     return None, None
 
 
+def read_props(path):
+    props = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            props[k] = v
+    return props
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--parts", required=True, help="含 13 个分区镜像的目录")
+    ap.add_argument("--parts", default="", help="含 13 个分区镜像的目录（dd 路线用；与 --payload 二选一）")
+    ap.add_argument("--payload", default="", help="payload.bin 路径（引擎路线用）")
+    ap.add_argument("--zip", default="", help="标准 OTA zip 路径（可选，一起登记）")
     ap.add_argument("--version", required=True)
     ap.add_argument("--channel", default="stable")
     ap.add_argument("--out", required=True)
     ap.add_argument("--base-url", default="")
     ap.add_argument("--note", default="")
     a = ap.parse_args()
+    if not a.parts and not a.payload:
+        raise SystemExit("必须给 --payload（引擎路线）或 --parts（dd 路线）")
 
     entries, missing, total = [], [], 0
-    for name in PARTS:
+    for name in (PARTS if a.parts else []):
         path, fname = find_image(a.parts, name)
         if not path:
             missing.append(name)
@@ -83,6 +99,29 @@ def main():
         print("缺镜像: " + ", ".join(missing), file=sys.stderr)
         return 1
 
+    payload_doc = None
+    if a.payload:
+        psize = os.path.getsize(a.payload)
+        total = psize
+        props_path = a.payload + ".properties"
+        if not os.path.isfile(props_path):
+            raise SystemExit(f"缺 {props_path}（payload 签名属性必须一起发）")
+        props = read_props(props_path)
+        payload_doc = {
+            "file": os.path.basename(a.payload),
+            "size": psize,
+            "sha256": sha256_of(a.payload),
+            "file_hash": props.get("FILE_HASH", ""),
+            "metadata_size": int(props.get("METADATA_SIZE", "0")),
+        }
+        if a.zip:
+            payload_doc["zip"] = {
+                "file": os.path.basename(a.zip),
+                "size": os.path.getsize(a.zip),
+                "sha256": sha256_of(a.zip),
+            }
+        print(f"  payload        {psize/2**30:8.2f} GiB  {payload_doc['file']}", flush=True)
+
     doc = {
         "format": 1,
         "version": a.version,
@@ -92,8 +131,10 @@ def main():
         "base_url": a.base_url,
         "note": a.note,
         "parts": entries,
+        "payload": payload_doc,
         "signature": None,
     }
+
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
