@@ -47,6 +47,17 @@
   三个补齐后二进制可完整链接（shell 身份注册返回 `status=-3` 属正常，init 以 root 起不受限）。
 - **辅助手段**：`build/charger_hal_deps.py`（静态依赖闭包）、`tools/gk3_hal_probe.sh`（设备端迭代试探）。
 - **遗留**：修好 HAL 后需验证“SystemUI 充电补丁是否可撤”。
+- **2026-11-26 进展：缺库已修，但真因更深一层。**
+  两个 so 经 `build/patches/p_odm_charger_libs.sh` 补进 `odm/lib64` 并随增量包刷入 B 槽，
+  手动运行 `/odm/bin/hw/vendor.oplus.hardware.charger-V12-service` 不再报缺库
+  （只剩 shell 身份下的 `registerChargerService failed: status=-3`，属预期）。
+  但 init 拉起仍 `restarting`：**`/sys/class/oplus_chg` 不存在**。
+  该 HAL 依赖 OPPO 自家充电驱动的 sysfs 接口，本机内核提供的是华为 EC 的
+  `gaokun-ec-battery` / `gaokun-ec-adapter`，HAL 找不到节点就 abort。
+  标准电池路径是通的（`dumpsys battery` 的 level/voltage/technology 均来自 EC）。
+  两条路：A. 内核仿造 `oplus_chg` 接口（工作量大、收益不确定）；
+  B. 绕开 oplus HAL，走标准 health HAL + SystemUI 适配（即 gk3-charge 补丁的方向，推荐）。
+  尚未拍板；且验证充电行为必须物理插上充电器。
 
 ## 6. 开机 12 s 卡到 70 多秒
 

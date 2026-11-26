@@ -538,3 +538,28 @@ A/B 的 payload 增量靠 `SOURCE_COPY`：没变的分区不下发任何数据�
 
 `none` 全量 8.90 GiB，每次上传/下载都要走满这个量；增量只走变化分区，常态可能只有几百 MB。
 用户嫌上行慢、又不想为中间版本重复传 8.9 GB，所以「先做增量、稳定版再上传」的顺序是对的。
+
+### 18.6 混合增量真机验证通过（2026-11-26 23:06）
+
+借「odm 补充电 HAL 两个 so」这次改动顺路验掉了 18.4 的第 2 项，一次刷机验两件事。
+
+源 = 设备 A 槽现状（odm 为补库前 `5f014b79…`），目标 = 补库后 `7500129e…`，其余 12 分区不变。
+源账本由 `work/make_src_manifest_odm.py` 生成（`work/manifest-src-odm.json`）。
+
+| 项目 | 全量对照 | 本次增量 |
+| --- | --- | --- |
+| 包体 | 8.90 GiB | **1.98 GiB**（省 78%） |
+| ops | 2351 | 521（odm 509 REPLACE + 12 条 SOURCE_COPY） |
+| 写入耗时 | 62.9 s | **46.0 s** |
+| 结果 | kSuccess | kSuccess，重启 B 槽 `boot_completed=1` |
+
+**关键坑：`minor_version` 必须 ≥ 4。**
+第一版沿用全量的 `minor_version=0`，引擎在**解析 manifest 阶段**（115 ms，尚未写任何数据）
+就报 `kUnsupportedMinorPayloadVersion (45)`。改成 4（动态分区增量对应的版本）后一次通过。
+`make_payload.py` 现在默认：全量 0、给了 `--source-manifest` 则 4，可用 `--minor-version` 覆盖。
+commit `1cb5334`。
+
+离线自检同样通过：`verify_payload.py --source-manifest` 用旧 odm 镜像补回 SOURCE_COPY 的数据，
+重拼 9.15 GiB，13 个 sha 全对。
+
+剩下的是 18.4 第 3 项（发布侧全量/增量双轨 + 失败回退），代码未写。
