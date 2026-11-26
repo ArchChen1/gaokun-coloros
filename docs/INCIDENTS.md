@@ -117,9 +117,15 @@ jadx fallback 复核字节码，分支与设计完全一致。产物 `work/charg
 5. **关键判据**：`dumpsys activity broadcasts` 里 BATTERY_CHANGED 的 extras
    现在是 **`notifycode=0`**（补丁前是 `-1`）。未插电分支已确认走通。
 
-**仍待验收**：插上充电器后看状态栏是否出现充电图标。
-当前 `gaokun-ec-adapter online=0`，设备在用电池，插电分支（`plugged!=0 && status==2 → 0`）
-只能由用户物理插电触发。HAL 依旧 `getIChargerService fail`，属预期——B 方案本就不依赖它。
+**插电验收（2026-11-27 00:30，通过）**：
+
+插上充电器后 BATTERY_CHANGED 的 extras 变成 `status=2, plugged=2, notifycode=0`；
+`/sys/class/power_supply/gaokun-ec-adapter/online=1`、battery `status=Charging`、
+`current_now=+2,095,000`（µA，补丁前未插电是 `-941,000`），容量 91 → 92。
+状态栏电池右侧出现**闪电图标**。B 方案闭环。
+
+注意 `dumpsys battery` 会显示 `AC powered: false / USB powered: true`——
+这台机器的充电走 USB 口，属硬件事实，不影响判定（`plugged=2` 是 USB_PLUGGED）。
 
 ## 6. 开机 12 s 卡到 70 多秒
 
