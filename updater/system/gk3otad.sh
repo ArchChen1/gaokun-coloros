@@ -38,4 +38,7 @@ while true; do
     echo "rc=$?" >> "$DIR/status"
     chmod 644 "$DIR/status"
     sync
+    # 留一份全日志给排查用（App 侧只能读到摘要）
+    cp "$DIR/status" /data/local/tmp/gk3otad.status 2>/dev/null
+    chmod 644 /data/local/tmp/gk3otad.status 2>/dev/null
 done

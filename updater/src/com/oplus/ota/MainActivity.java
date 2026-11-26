@@ -40,6 +40,9 @@ public class MainActivity extends Activity {
     private final Handler mUi = new Handler(Looper.getMainLooper());
 
     private volatile boolean mBusy;
+    private volatile boolean mPolling;
+    private volatile boolean mPollSuppressed;
+    private volatile long mHandoffAt;
     private ReleaseSource.Release mRelease;
     /** 已就绪的 payload（校验过 sha 才会被赋值） */
     private File mReadyPayload;
@@ -80,6 +83,10 @@ public class MainActivity extends Activity {
 
         // 装完重启进新系统：把上一轮下载的包顺手删掉（判断依据见 afterBootCheck）
         afterBootCheck();
+        // 页面被划掉再回来、或 App 被系统杀掉后重启：接着显示写入进度
+        if (new File(getFilesDir(), "request.done").exists()) {
+            pollStatus();
+        }
     }
 
     // ---------------------------------------------------------------- 在线
@@ -343,44 +350,181 @@ public class MainActivity extends Activity {
             return;
         }
         mStatus.setText("已交给系统写入服务");
-        mHint.setText("写入在后台进行，进度会显示在这里；完成后提示重启。");
+        mHint.setText("写入由系统服务执行：关掉这个页面、划掉卡片都不会中断；完成后提示重启。");
         writePending(currentSlot().equals("a") ? "b" : "a");
+        // 上一轮的 status 还留着（内容是上次的 rc=0），不清掉的话页面第一次刷新会显示成
+        // 「写入结束」，这一轮的真实进度就再也看不到了。
+        //noinspection ResultOfMethodCallIgnored
+        new File(getFilesDir(), "status").delete();
+        mHandoffAt = System.currentTimeMillis();
         pollStatus();
     }
 
     private void pollStatus() {
+        if (mPolling) {
+            return;
+        }
+        mPolling = true;
         final File st = new File(getFilesDir(), "status");
         mUi.postDelayed(new Runnable() {
             @Override
             public void run() {
+                if (mPollSuppressed) {
+                    mPolling = false;
+                    return;
+                }
                 if (!st.exists()) {
                     mUi.postDelayed(this, 2000);
                     return;
                 }
-                try (BufferedReader r = new BufferedReader(new InputStreamReader(
-                        new java.io.FileInputStream(st), "UTF-8"))) {
-                    String last = null;
-                    String line;
-                    int lines = 0;
-                    while ((line = r.readLine()) != null) {
-                        if (line.trim().isEmpty()) {
-                            continue;
-                        }
-                        last = line.trim();
-                        lines++;
-                    }
-                    if (last != null) {
-                        mDetail.setText(String.format("%s（%d 行日志）", last, lines));
-                        if (last.contains("kSuccess")) {
-                            mStatus.setText("写入完成，重启生效");
-                        }
-                    }
+                if (mHandoffAt > 0 && st.lastModified() + 2000 < mHandoffAt) {
+                    // 还是上一轮留下的旧结果，等写入服务把它清空重写
+                    mStatus.setText("已交给系统写入服务");
+                    mDetail.setText("等系统服务接手…");
+                    mUi.postDelayed(this, 2000);
+                    return;
+                }
+                String text = null;
+                try {
+                    text = readAll(st);
                 } catch (Exception ignored) {
                     // 文件正在被写，下一轮再看
+                }
+                if (text == null || text.trim().isEmpty()) {
+                    mUi.postDelayed(this, 2000);
+                    return;
+                }
+
+                String last = lastLine(text);
+                int lines = countLines(text);
+
+                if (hasDoneLine(text)) {
+                    mStatus.setText(last != null && last.contains("kSuccess") ? "写入完成，重启生效" : "写入结束");
+                    if (last != null) {
+                        mDetail.setText(last + "（" + lines + " 行日志）");
+                    }
+                    mPolling = false;
+                    refreshCache();
+                    return;
+                }
+
+                String pct = lastPercent(text);
+                String phase = lastPhase(text);
+                if (pct != null) {
+                    long total = mReadyPayload == null ? 0 : mReadyPayload.length();
+                    mStatus.setText("正在写入 " + pct + "%");
+                    String bytes = total > 0
+                            ? "约 " + fmtGb((long) (total * Double.parseDouble(pct) / 100.0)) + " / " + fmtGb(total)
+                            : "";
+                    mDetail.setText(phase == null ? bytes : (bytes.isEmpty() ? phase : bytes + " ｜ " + phase));
+                } else {
+                    mStatus.setText(phase != null ? phase : "正在写入…");
+                    if (last != null) {
+                        mDetail.setText(last + "（" + lines + " 行日志）");
+                    }
                 }
                 mUi.postDelayed(this, 2000);
             }
         }, 1000);
+    }
+
+    /** 日志里可能带 \r 覆盖式进度，两种换行都当分隔。 */
+    private static String readAll(File f) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(f), "UTF-8"))) {
+            char[] buf = new char[4096];
+            int n;
+            while ((n = r.read(buf)) > 0) {
+                sb.append(buf, 0, n);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String[] lines(String text) {
+        return text.split("\\r\\n|\\r|\\n");
+    }
+
+    private static int countLines(String text) {
+        int c = 0;
+        for (String s : lines(text)) {
+            if (!s.trim().isEmpty()) {
+                c++;
+            }
+        }
+        return c;
+    }
+
+    private static String lastLine(String text) {
+        String last = null;
+        for (String s : lines(text)) {
+            if (!s.trim().isEmpty()) {
+                last = s.trim();
+            }
+        }
+        return last;
+    }
+
+    private static boolean hasDoneLine(String text) {
+        for (String s : lines(text)) {
+            if (s.trim().startsWith("rc=")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 最后一个 ≤100 的百分比；没有就返回 null（引擎不一定会打进度）。 */
+    private static String lastPercent(String text) {
+        // 引擎的实际输出长这样：onStatusUpdate(UPDATE_STATUS_DOWNLOADING (3), 0.210037)
+        // 是 0..1 的小数，不是百分号；优先用它。
+        String frac = null;
+        java.util.regex.Matcher f = java.util.regex.Pattern.compile(
+                "onStatusUpdate\\(UPDATE_STATUS_[A-Z_]+\\s*\\(\\d+\\),\\s*(\\d+\\.\\d+)\\)").matcher(text);
+        while (f.find()) {
+            frac = f.group(1);
+        }
+        if (frac != null) {
+            double v = Double.parseDouble(frac) * 100.0;
+            return v > 100 ? null : String.format(java.util.Locale.US, "%.0f", v);
+        }
+
+        String hit = null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(?<![\\d.])(\\d{1,3}(?:\\.\\d{1,2})?)\\s*%").matcher(text);
+        while (m.find()) {
+            if (Double.parseDouble(m.group(1)) <= 100) {
+                hit = m.group(1);
+            }
+        }
+        return hit;
+    }
+
+    /** 引擎的 UPDATE_STATUS_* 翻成人话。 */
+    private static String lastPhase(String text) {
+        String hit = null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("UPDATE_STATUS_([A-Z_]+)").matcher(text);
+        while (m.find()) {
+            hit = m.group(1);
+        }
+        if (hit == null) {
+            return null;
+        }
+        switch (hit) {
+            case "DOWNLOADING":
+                return "正在写入分区";
+            case "VERIFYING":
+                return "正在校验写入结果";
+            case "FINALIZING":
+                return "正在收尾";
+            case "UPDATED_NEED_REBOOT":
+                return "写入完成，重启生效";
+            case "CLEANUP_PREVIOUS_UPDATE":
+                return "正在清理旧槽";
+            case "ATTEMPTING_ROLLBACK":
+                return "正在回滚";
+            default:
+                return null;
+        }
     }
 
     // ---------------------------------------------------------------- 清理
@@ -406,6 +550,12 @@ public class MainActivity extends Activity {
      */
     private void afterBootCheck() {
         new Thread(() -> {
+            if (runInFlight()) {
+                // 写入还没结束（页面被划掉又打开时就会遇到）：这时候绝不能清 pending，
+                // 否则重启进新系统后没人知道这次是「装成了」。
+                refreshCache();
+                return;
+            }
             File pend = new File(getFilesDir(), PENDING);
             final boolean hadPending = pend.exists();
             boolean installed = false;
@@ -423,6 +573,7 @@ public class MainActivity extends Activity {
             final long f = freed;
             mUi.post(() -> {
                 if (ok) {
+                    mPollSuppressed = true;
                     mStatus.setText("更新已生效，旧包已清理");
                     mDetail.setText("释放 " + fmtGb(f));
                     mHint.setText("安装完重启进新系统会自动清掉下载的 payload，不再白占空间。");
@@ -432,6 +583,22 @@ public class MainActivity extends Activity {
                 refreshCache();
             });
         }, "gk3-ota-clean").start();
+    }
+
+    /** 写入还在进行（请求没被取走，或 status 里还没有 rc= 结论）就别做「装成没装成」的判定。 */
+    private boolean runInFlight() {
+        if (new File(getFilesDir(), "request").exists()) {
+            return true;
+        }
+        File st = new File(getFilesDir(), "status");
+        if (!st.exists()) {
+            return false;
+        }
+        try {
+            return !hasDoneLine(readAll(st));
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     private void manualClean() {
