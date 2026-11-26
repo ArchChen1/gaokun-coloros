@@ -82,18 +82,24 @@ def _compress_one(algo, level, item):
     return pos, len(buf), buf
 
 
-def build_manifest(entries, spool_f=None, pool=None, block_size=BLOCK):
+def build_manifest(entries, spool_f=None, pool=None, block_size=BLOCK, source=None):
     """entries: [(name, path, bytes)]，返回 (manifest, data_size, plan)。
+
+    source: {name: (size, sha_bytes)} —— 给了就是增量包：与源完全一致的分区
+    只发一条 SOURCE_COPY（从旧槽原地复制，不带数据），变了的分区照常发全量数据。
+    注意 payload 必须覆盖全部 13 个分区，少发会让目标槽丢分区。
 
     plan 按数据区顺序记录每个 op 的数据来源，写 payload 时照抄即可：
       ("file", path, off, length) —— 未压缩，直接从镜像切片
       ("spool", off, length)      —— 压缩后的块，落在临时文件里
+      None                        —— 不带数据（ZERO / SOURCE_COPY）
     """
     m = um.DeltaArchiveManifest()
     m.block_size = block_size
     m.minor_version = 0
     data_offset = 0
     plan = []
+    copied, changed = [], []
     for name, path, size in entries:
         if size % block_size:
             raise SystemExit(f"{name} 大小不是 {block_size} 的整数倍: {size}")
@@ -114,6 +120,35 @@ def build_manifest(entries, spool_f=None, pool=None, block_size=BLOCK):
                     op.data_sha256_hash = digest
                     data_offset += op.data_length
                 plan.append(blob)
+
+        src = source.get(name) if source else None
+        if src is not None:
+            # 增量包里每个分区都声明源信息：设备会先校验旧槽内容，
+            # 对不上就早失败（前端据此回退全量），不会写坏一半。
+            old = pu.old_partition_info
+            old.size = src[0]
+            old.hash = src[1]
+
+        if src is not None and src[0] == size:
+            new_hash = _sha256_file(path)
+            if new_hash == src[1]:
+                op = pu.operations.add()
+                op.type = um.InstallOperation.SOURCE_COPY
+                se = op.src_extents.add()
+                se.start_block = 0
+                se.num_blocks = size // block_size
+                de = op.dst_extents.add()
+                de.start_block = 0
+                de.num_blocks = size // block_size
+                plan.append(None)
+                info = pu.new_partition_info
+                info.size = size
+                info.hash = new_hash
+                copied.append(name)
+                continue
+            changed.append(name)
+        elif source is not None:
+            changed.append(name)
 
         if COMPRESS == "none" and not ZERO:
             # 快速路径：整份一个 REPLACE，只读一遍算哈希
@@ -176,6 +211,9 @@ def build_manifest(entries, spool_f=None, pool=None, block_size=BLOCK):
     group.size = sum(size for _, _, size in entries)
     for name, _, _ in entries:
         group.partition_names.append(name)
+    if source is not None:
+        print("增量：SOURCE_COPY %d 个分区 %s" % (len(copied), ",".join(copied) or "-"))
+        print("      带数据 %d 个分区 %s" % (len(changed), ",".join(changed) or "-"))
     return m, data_offset, plan
 
 
@@ -225,6 +263,8 @@ def main():
     ap.add_argument("--spool", default="", help="压缩块临时文件路径（默认系统临时目录）")
     ap.add_argument("--zip", default="",
                     help="额外产出标准 A/B OTA zip（payload.bin + payload_properties.txt + META-INF 占位）")
+    ap.add_argument("--source-manifest", default="",
+                    help="上一版账本：给了就出增量包，未变分区走 SOURCE_COPY，只发变化分区的数据")
     a = ap.parse_args()
     global SNAPSHOT, DYNAMIC_GROUP, COMPRESS, LEVEL, ZERO, CHUNK
     SNAPSHOT = a.snapshot
@@ -275,13 +315,27 @@ def main():
 
     spool_f = None
     pool = None
+    source = None
+    if a.source_manifest:
+        old = json.load(open(a.source_manifest, encoding="utf-8"))
+        op_parts = old.get("parts", {})
+        source = {}
+        for name, _, _ in entries:
+            p = op_parts.get(name)
+            if not p:
+                raise SystemExit(f"上一版账本里没有 {name}（{a.source_manifest}）")
+            if not p.get("sha256") or not p.get("bytes"):
+                raise SystemExit(f"上一版账本 {name} 缺 sha256/bytes")
+            source[name] = (p["bytes"], bytes.fromhex(p["sha256"]))
+        print(f"增量源=账本 {a.source_manifest}（generated={old.get('generated', '?')}）")
     if COMPRESS != "none":
         spool_path = a.spool or os.path.join(tempfile.gettempdir(), "ota_spool.bin")
         spool_f = open(spool_path, "w+b")
         if a.jobs != 1:
             pool = ProcessPoolExecutor(max_workers=a.jobs or os.cpu_count() or 1)
     try:
-        manifest, data_size, plan = build_manifest(entries, spool_f=spool_f, pool=pool)
+        manifest, data_size, plan = build_manifest(entries, spool_f=spool_f, pool=pool,
+                                                 source=source)
     finally:
         if pool is not None:
             pool.shutdown()

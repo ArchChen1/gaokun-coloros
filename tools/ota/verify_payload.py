@@ -13,6 +13,7 @@
 import argparse
 import bz2
 import hashlib
+import json
 import lzma
 import os
 import struct
@@ -39,6 +40,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--payload", required=True)
     ap.add_argument("--out-dir", default="", help="把解码后的分区写出来（可选，占空间）")
+    ap.add_argument("--source-manifest", default="",
+                    help="增量包校验：上一版账本，SOURCE_COPY 的数据从这里取")
     a = ap.parse_args()
 
     stats = {"ops": 0, "zero": 0, "replace": 0, "xz": 0, "bz": 0,
@@ -59,10 +62,22 @@ def main():
             raise SystemExit(f"block_size 异常：{m.block_size}")
 
         offset = 0
+        src_parts = {}
+        if a.source_manifest:
+            src_parts = json.load(open(a.source_manifest, encoding="utf-8")).get("parts", {})
         for pu in m.partitions:
             name = pu.partition_name
             hpart = hashlib.sha256()
             expect_block = 0
+            src_f = None
+            if any(o.type == um.InstallOperation.SOURCE_COPY for o in pu.operations):
+                p = src_parts.get(name)
+                if not p or not os.path.isfile(p.get("path", "")):
+                    raise SystemExit(f"{name}: 增量校验需要上一版镜像，请用 --source-manifest 指向可用账本")
+                if pu.HasField("old_partition_info"):
+                    if p["bytes"] != pu.old_partition_info.size:
+                        raise SystemExit(f"{name}: 源大小与 old_partition_info 不符")
+                src_f = open(p["path"], "rb")
             buf_out = open(os.path.join(a.out_dir, name + ".img"), "wb") if a.out_dir else None
             for op in pu.operations:
                 stats["ops"] += 1
@@ -74,6 +89,24 @@ def main():
                 if start != expect_block:
                     raise SystemExit(f"{name}: extent 不连续，期望 {expect_block} 实得 {start}")
                 expect_block += nblocks
+                if op.type == um.InstallOperation.SOURCE_COPY:
+                    if op.HasField("data_length") or op.HasField("data_offset"):
+                        raise SystemExit(f"{name}: SOURCE_COPY 不该带数据")
+                    if len(op.src_extents) != 1:
+                        raise SystemExit(f"{name}: SOURCE_COPY 只支持单 src extent")
+                    se = op.src_extents[0]
+                    if se.num_blocks != nblocks:
+                        raise SystemExit(f"{name}: SOURCE_COPY 源/目标块数不等")
+                    src_f.seek(se.start_block * BLOCK)
+                    raw = src_f.read(nblocks * BLOCK)
+                    if len(raw) != nblocks * BLOCK:
+                        raise SystemExit(f"{name}: 源镜像读取不足")
+                    stats["copy"] = stats.get("copy", 0) + 1
+                    stats["raw"] += len(raw)
+                    hpart.update(raw)
+                    if buf_out:
+                        buf_out.write(raw)
+                    continue
                 if op.type == um.InstallOperation.ZERO:
                     if op.HasField("data_length") or op.HasField("data_offset"):
                         raise SystemExit(f"{name}: ZERO 带数据字段")
@@ -106,6 +139,8 @@ def main():
                     buf_out.write(raw)
             if buf_out:
                 buf_out.close()
+            if src_f:
+                src_f.close()
             size = expect_block * BLOCK
             if pu.new_partition_info.size != size:
                 raise SystemExit(f"{name}: 覆盖 {size} B，但 new_partition_info.size={pu.new_partition_info.size}")
