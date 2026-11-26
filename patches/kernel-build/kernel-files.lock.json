@@ -1,8 +1,8 @@
 {
- "note": "\u5185\u6838\u8865\u4e01\u5c42\u6539\u52a8\u8fc7\u7684 136 \u4e2a\u6587\u4ef6\u7684\u671f\u671b\u5185\u5bb9\uff1b\u6253\u8865\u4e01\u540e\u9010\u6587\u4ef6\u6838\u8fd9\u91cc",
+ "note": "\u5185\u6838\u8865\u4e01\u5c42\u6539\u52a8\u8fc7\u7684 139 \u4e2a\u6587\u4ef6\u7684\u671f\u671b\u5185\u5bb9\uff1b\u6253\u8865\u4e01\u540e\u9010\u6587\u4ef6\u6838\u8fd9\u91cc",
  "base": "2f6ee52d42deae4650756aaf740b1525f16b956e",
- "head": "86450bb77176ba1ccf2aad21c4a8ac40894e1fc8",
- "count": 136,
+ "head": "e36b3ae3466482f68f394a8939a6481b462e28dd",
+ "count": 139,
  "files": [
   {
    "path": "Documentation/devicetree/bindings/clock/qcom,sa8775p-camcc.yaml",
@@ -33,12 +33,24 @@
    "sha256": "cade2cef8fea710157717eca191c91d56f56ea224f70a337c974d7534b3a3ad8"
   },
   {
+   "path": "drivers/Kconfig",
+   "sha256": "f3d046b53c8a4df973344f40bc181209efaa2d3b7c7148637fbc6a1706c70356"
+  },
+  {
+   "path": "drivers/Makefile",
+   "sha256": "b73baa68e462959066ab341036539b0ed02956316bb339159ef721b3286c30cb"
+  },
+  {
    "path": "drivers/bluetooth/btqca.c",
    "sha256": "3488a61c95dc868ff6ec324f6c87804cfd92d1f68f0f6904a9b71e6ed8e1d24f"
   },
   {
    "path": "drivers/clk/qcom/camcc-sc8280xp.c",
    "sha256": "5972032682b6ad794ab39f34dfa841bec3131a2b5caf44c72a3218168d688b55"
+  },
+  {
+   "path": "drivers/firmware/efi/efi-pstore.c",
+   "sha256": "57299945480c6f025e81fb1e8fcb3f9480ee8b425556377144019ad35eba530c"
   },
   {
    "path": "drivers/firmware/qcom/Kconfig",
@@ -414,7 +426,7 @@
   },
   {
    "path": "drivers/power/supply/huawei-gaokun-battery.c",
-   "sha256": "3e9704ab79a26e56317c43a7df6f7b79d21ceda149290f3bfea696324d779995"
+   "sha256": "e4855dab7adf5a8334370dc36c3f03935116ef05fbfbdd668c733fc347861dad"
   },
   {
    "path": "drivers/soundwire/qcom.c",

@@ -428,6 +428,26 @@ index 6dfbcac..81835d9 100644
  #define TASK_SIZE_64		(UL(1) << vabits_actual)
  #define TASK_SIZE_MAX		(UL(1) << VA_BITS)
  
+diff --git a/drivers/Kconfig b/drivers/Kconfig
+index f2bed2d..ef23b3d 100644
+--- a/drivers/Kconfig
++++ b/drivers/Kconfig
+@@ -253,4 +253,5 @@ source "drivers/cdx/Kconfig"
+ 
+ source "drivers/resctrl/Kconfig"
+ 
++source "drivers/kernelsu/Kconfig"
+ endmenu
+diff --git a/drivers/Makefile b/drivers/Makefile
+index 0841ea8..f081f51 100644
+--- a/drivers/Makefile
++++ b/drivers/Makefile
+@@ -198,3 +198,5 @@ obj-y				+= resctrl/
+ 
+ obj-$(CONFIG_DIBS)		+= dibs/
+ obj-$(CONFIG_S390)		+= s390/
++
++obj-$(CONFIG_KSU) += kernelsu/
 diff --git a/drivers/bluetooth/btqca.c b/drivers/bluetooth/btqca.c
 index 4b0d838..8f35f86 100644
 --- a/drivers/bluetooth/btqca.c
@@ -709,6 +729,101 @@ index 660d865..be8b78a 100644
  }
  
  static struct platform_driver camcc_sc8280xp_driver = {
+diff --git a/drivers/firmware/efi/efi-pstore.c b/drivers/firmware/efi/efi-pstore.c
+index a5db353..d2fd071 100644
+--- a/drivers/firmware/efi/efi-pstore.c
++++ b/drivers/firmware/efi/efi-pstore.c
+@@ -5,6 +5,8 @@
+ #include <linux/pstore.h>
+ #include <linux/slab.h>
+ #include <linux/ucs2_string.h>
++#include <linux/notifier.h>
++#include <linux/workqueue.h>
+ 
+ MODULE_IMPORT_NS("EFIVAR");
+ 
+@@ -24,6 +26,45 @@ static bool pstore_disable = IS_ENABLED(CONFIG_EFI_VARS_PSTORE_DEFAULT_DISABLE);
+ static int efivars_pstore_init(void);
+ static void efivars_pstore_exit(void);
+ 
++static void efi_pstore_init_work_fn(struct work_struct *work)
++{
++	efivars_pstore_init();
++}
++static DECLARE_WORK(efi_pstore_init_work, efi_pstore_init_work_fn);
++
++/*
++ * On platforms where the efivar operations are supplied by a driver that
++ * probes after this file's initcall -- e.g. sc8280xp laptops, where variable
++ * access goes through qcom_qseecom_uefisecapp and efivars is not registered
++ * until ~0.76s into boot -- efivars_pstore_init() runs too early, sees
++ * efivar_supports_writes() == false and silently gives up forever. Listen on
++ * the efivar ops notifier so the backend is registered as soon as variable
++ * access becomes available.
++ */
++static int efi_pstore_ops_notifier(struct notifier_block *nb,
++				   unsigned long event, void *data)
++{
++	switch (event) {
++	case EFIVAR_OPS_RDWR:
++		/*
++		 * Must not register from here: efivars_register() holds
++		 * efivars_lock across this notifier call, and pstore_register()
++		 * reaches efi_pstore_open() -> efivar_lock(), which takes the
++		 * very same semaphore. Defer to process context.
++		 */
++		schedule_work(&efi_pstore_init_work);
++		break;
++	default:
++		return NOTIFY_DONE;
++	}
++
++	return NOTIFY_OK;
++}
++
++static struct notifier_block efi_pstore_nb = {
++	.notifier_call = efi_pstore_ops_notifier,
++};
++
+ static int efi_pstore_disable_set(const char *val, const struct kernel_param *kp)
+ {
+ 	int err;
+@@ -257,6 +298,9 @@ static struct pstore_info efi_pstore_info = {
+ 
+ static int efivars_pstore_init(void)
+ {
++	if (efi_pstore_info.bufsize)
++		return 0;
++
+ 	if (!efivar_supports_writes())
+ 		return 0;
+ 
+@@ -298,8 +342,23 @@ static void efivars_pstore_exit(void)
+ 	efi_pstore_info.bufsize = 0;
+ }
+ 
+-module_init(efivars_pstore_init);
+-module_exit(efivars_pstore_exit);
++static int __init efi_pstore_module_init(void)
++{
++	blocking_notifier_chain_register(&efivar_ops_nh, &efi_pstore_nb);
++
++	/* efivars may already be up, in which case the notifier never fires. */
++	return efivars_pstore_init();
++}
++
++static void __exit efi_pstore_module_exit(void)
++{
++	blocking_notifier_chain_unregister(&efivar_ops_nh, &efi_pstore_nb);
++	cancel_work_sync(&efi_pstore_init_work);
++	efivars_pstore_exit();
++}
++
++module_init(efi_pstore_module_init);
++module_exit(efi_pstore_module_exit);
+ 
+ MODULE_DESCRIPTION("EFI variable backend for pstore");
+ MODULE_LICENSE("GPL");
 diff --git a/drivers/firmware/qcom/Kconfig b/drivers/firmware/qcom/Kconfig
 index b477d54..ec919dc 100644
 --- a/drivers/firmware/qcom/Kconfig
@@ -22489,7 +22604,7 @@ index 63120e7..355842c 100644
  	[SC8280XP_MX_AO] = &mx_ao,
  	[SC8280XP_MXC] = &mxc,
 diff --git a/drivers/power/supply/huawei-gaokun-battery.c b/drivers/power/supply/huawei-gaokun-battery.c
-index e4dfec3..6212b00 100644
+index e4dfec3..57fa001 100644
 --- a/drivers/power/supply/huawei-gaokun-battery.c
 +++ b/drivers/power/supply/huawei-gaokun-battery.c
 @@ -8,6 +8,7 @@
@@ -22500,7 +22615,62 @@ index e4dfec3..6212b00 100644
  #include <linux/jiffies.h>
  #include <linux/module.h>
  #include <linux/notifier.h>
-@@ -110,6 +111,7 @@ struct gaokun_psy {
+@@ -30,6 +31,8 @@
+ #define EC_BAT_CHARGING		BIT(1)
+ #define EC_BAT_CRITICAL		BIT(2) /* Low Battery Level */
+ #define EC_BAT_FULL		BIT(3)
++#define EC_BAT_STATUS_KNOWN	(EC_BAT_DISCHARGING | EC_BAT_CHARGING | \
++				 EC_BAT_CRITICAL | EC_BAT_FULL)
+ 
+ /* -------------------------------------------------------------------------- */
+ /* Word Data Reg */
+@@ -48,7 +51,7 @@
+ #define EC_BAT_FULL_CAPACITY	0x96
+ /* 0x98: ? */
+ #define EC_BAT_CURRENT		0x9A
+-/* 0x9C: ? */
++#define EC_BAT_TEMP		0x9C
+ 
+ #define EC_BAT_INFO_START	0xA0
+ /* 0xA0: POWER_SUPPLY_PROP_INPUT_VOLTAGE_LIMIT? */
+@@ -72,6 +75,10 @@
+ 
+ #define MILLI_TO_MICRO		1000
+ 
++#define KELVIN_OFFSET		2731
++#define EC_BAT_TEMP_MIN		(KELVIN_OFFSET - 400)	/* -40.0 C */
++#define EC_BAT_TEMP_MAX		(KELVIN_OFFSET + 1200)	/* 120.0 C */
++
+ #define SMART_CHARGE_MODE	0
+ #define SMART_CHARGE_DELAY	1
+ #define SMART_CHARGE_START	2
+@@ -80,6 +87,16 @@
+ #define NO_DELAY_MODE	1
+ #define DELAY_MODE	4
+ 
++/*
++ * Escalate EC_BAT_CRITICAL to CAPACITY_LEVEL_CRITICAL only when the reported
++ * capacity is at or below critical_max_capacity so an early EC critical bit
++ * cannot trigger a premature userspace shutdown (0 = only at 0%).
++ */
++static int critical_max_capacity = 2;
++module_param(critical_max_capacity, int, 0644);
++MODULE_PARM_DESC(critical_max_capacity,
++		 "Report CAPACITY_LEVEL Critical on the EC critical bit only at or below this capacity (%)");
++
+ struct gaokun_psy_bat_status {
+ 	__le16 percentage_now;	/* 0x90 */
+ 	__le16 voltage_now;
+@@ -87,7 +104,7 @@ struct gaokun_psy_bat_status {
+ 	__le16 full_capacity;
+ 	__le16 unknown1;
+ 	__le16 rate_now;
+-	__le16 unknown2;	/* 0x9C */
++	__le16 temp_now;	/* 0x9C, 0.1 K */
+ } __packed;
+ 
+ struct gaokun_psy_bat_info {
+@@ -110,12 +127,14 @@ struct gaokun_psy {
  	unsigned long update_time;
  	struct gaokun_psy_bat_status status;
  	struct gaokun_psy_bat_info info;
@@ -22508,7 +22678,14 @@ index e4dfec3..6212b00 100644
  
  	char battery_model[0x10]; /* HB30A8P9ECW-22T, the real one is XXX-22A */
  	char battery_serial[0x10];
-@@ -180,13 +182,19 @@ static const struct power_supply_desc gaokun_psy_adp_desc = {
+ 	char battery_vendor[0x10];
+ 
+ 	int charge_now;
++	u8 bat_status_raw;	/* Last successfully read raw 0x82 byte */
+ 	int online;
+ 	int bat_present;
+ };
+@@ -180,13 +199,19 @@ static const struct power_supply_desc gaokun_psy_adp_desc = {
  /* -------------------------------------------------------------------------- */
  /* Battery */
  
@@ -22532,7 +22709,7 @@ index e4dfec3..6212b00 100644
  
  	ret = gaokun_ec_psy_read_byte(ecbat->ec, EC_ADP_STATUS, &present);
  
-@@ -201,7 +209,7 @@ static inline int gaokun_psy_bat_present(struct gaokun_psy *ecbat)
+@@ -201,32 +226,108 @@ static inline int gaokun_psy_bat_present(struct gaokun_psy *ecbat)
  static int gaokun_psy_get_bat_info(struct gaokun_psy *ecbat)
  {
  	/* _BIX */
@@ -22541,7 +22718,185 @@ index e4dfec3..6212b00 100644
  		return 0;
  
  	return gaokun_ec_psy_multi_read(ecbat->ec, EC_BAT_INFO_START,
-@@ -568,6 +576,7 @@ static int gaokun_psy_notify(struct notifier_block *nb,
+ 					sizeof(ecbat->info), (u8 *)&ecbat->info);
+ }
+ 
++/*
++ * Decode register 0x82 bitwise. Bits 0..2 match the ACPI _BST state bitmask
++ * (bit 0 discharging, bit 1 charging, bit 2 critical) and bit 3 indicates full.
++ * Matching the whole byte with a switch statement left charge_now stale on 0x00
++ * (plugged in, not charging) or combined states such as 0x05 (discharging +
++ * critical).
++ *
++ * Prioritize discharging over other bits so a stale charging bit never blocks
++ * low-battery shutdown; then check full and charging; if no bit is set, report
++ * NOT_CHARGING when on AC power and DISCHARGING otherwise.
++ */
++static int gaokun_psy_decode_bat_status(struct gaokun_psy *ecbat, u8 raw)
++{
++	if (raw & EC_BAT_DISCHARGING)
++		return POWER_SUPPLY_STATUS_DISCHARGING;
++	if (raw & EC_BAT_FULL)
++		return POWER_SUPPLY_STATUS_FULL;
++	if (raw & EC_BAT_CHARGING)
++		return POWER_SUPPLY_STATUS_CHARGING;
++
++	if (gaokun_psy_get_adp_status(ecbat))
++		return POWER_SUPPLY_STATUS_UNKNOWN;
++
++	return ecbat->online ? POWER_SUPPLY_STATUS_NOT_CHARGING :
++			       POWER_SUPPLY_STATUS_DISCHARGING;
++}
++
+ static void gaokun_psy_update_bat_charge(struct gaokun_psy *ecbat)
+ {
+ 	u8 charge;
+ 
+-	gaokun_ec_psy_read_byte(ecbat->ec, EC_BAT_STATUS, &charge);
++	/* Keep the previous status if the EC read fails */
++	if (gaokun_ec_psy_read_byte(ecbat->ec, EC_BAT_STATUS, &charge))
++		return;
+ 
+-	switch (charge) {
+-	case EC_BAT_CHARGING:
+-		ecbat->charge_now = POWER_SUPPLY_STATUS_CHARGING;
+-		break;
+-	case EC_BAT_DISCHARGING:
+-		ecbat->charge_now = POWER_SUPPLY_STATUS_DISCHARGING;
+-		break;
+-	case EC_BAT_FULL:
+-		ecbat->charge_now = POWER_SUPPLY_STATUS_FULL;
+-		break;
+-	default:
+-		dev_warn(ecbat->dev, "unknown charge state %d\n", charge);
+-	}
++	if (charge & ~EC_BAT_STATUS_KNOWN)
++		dev_warn_once(ecbat->dev, "unknown charge state bits 0x%02x\n", charge);
++
++	ecbat->bat_status_raw = charge;
++	ecbat->charge_now = gaokun_psy_decode_bat_status(ecbat, charge);
++}
++
++/*
++ * When capacity_level is exposed in sysfs, Android's BatteryService shuts down
++ * only when capacity_level == Critical rather than falling back to the legacy
++ * "capacity <= 0 && status != Charging" rule:
++ *
++ *   - Report Critical at 0% unless the EC reports charging and rate_now is
++ *     positive, covering the case where a weak USB power source asserts the
++ *     charging bit while the battery continues to drain to 0%.
++ *   - Report Critical when EC_BAT_CRITICAL is set and capacity is at or below
++ *     critical_max_capacity (unless actively gaining charge), leaving a small
++ *     safety margin for the EC's own low-battery threshold.
++ *
++ * Note: rate_now is treated as signed positive when charging (+15..+106 mA
++ * observed while charging from a host USB port at 92% SOC). If a future EC
++ * firmware revision uses the opposite sign convention, verify both weak-supply
++ * drain and charger attach at 0%.
++ */
++static int gaokun_psy_capacity_level(struct gaokun_psy *ecbat)
++{
++	int cap = le16_to_cpu(ecbat->status.percentage_now);
++	int rate = (s16)le16_to_cpu(ecbat->status.rate_now);
++	u8 raw = ecbat->bat_status_raw;
++	bool gaining = (raw & EC_BAT_CHARGING) && !(raw & EC_BAT_DISCHARGING) &&
++		       rate > 0;
++
++	if (!gaining && (cap <= 0 ||
++			 ((raw & EC_BAT_CRITICAL) && cap <= critical_max_capacity)))
++		return POWER_SUPPLY_CAPACITY_LEVEL_CRITICAL;
++
++	if (ecbat->charge_now == POWER_SUPPLY_STATUS_FULL || cap >= 100)
++		return POWER_SUPPLY_CAPACITY_LEVEL_FULL;
++
++	if (raw & EC_BAT_CRITICAL)
++		return POWER_SUPPLY_CAPACITY_LEVEL_LOW;
++
++	return POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
++}
++
++/*
++ * Word 0x9c reports the battery temperature in tenths of a Kelvin. Reject
++ * values outside [-40.0 C, 120.0 C] with -ENODATA so an uninitialized (0x0000)
++ * or failed (0xffff) read cannot trigger an emergency over-temperature
++ * shutdown in userspace.
++ */
++static int gaokun_psy_get_temp(struct gaokun_psy *ecbat, int *temp)
++{
++	u16 raw = le16_to_cpu(ecbat->status.temp_now);
++
++	if (raw < EC_BAT_TEMP_MIN || raw > EC_BAT_TEMP_MAX)
++		return -ENODATA;
++
++	*temp = (int)raw - KELVIN_OFFSET;
++	return 0;
+ }
+ 
+ static int gaokun_psy_get_bat_status(struct gaokun_psy *ecbat)
+@@ -339,6 +440,16 @@ static int gaokun_psy_get_bat_property(struct power_supply *psy,
+ 		val->intval = le16_to_cpu(ecbat->status.percentage_now);
+ 		break;
+ 
++	case POWER_SUPPLY_PROP_CAPACITY_LEVEL:
++		val->intval = gaokun_psy_capacity_level(ecbat);
++		break;
++
++	case POWER_SUPPLY_PROP_TEMP:
++		ret = gaokun_psy_get_temp(ecbat, &val->intval);
++		if (ret)
++			return ret;
++		break;
++
+ 	case POWER_SUPPLY_PROP_MODEL_NAME:
+ 		val->strval = ecbat->battery_model;
+ 		break;
+@@ -418,6 +529,8 @@ static enum power_supply_property gaokun_psy_bat_props[] = {
+ 	POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD,
+ 	POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD,
+ 	POWER_SUPPLY_PROP_CAPACITY,
++	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
++	POWER_SUPPLY_PROP_TEMP,
+ 	POWER_SUPPLY_PROP_MODEL_NAME,
+ 	POWER_SUPPLY_PROP_MANUFACTURER,
+ 	POWER_SUPPLY_PROP_SERIAL_NUMBER,
+@@ -541,9 +654,36 @@ static ssize_t smart_charge_delay_store(struct device *dev,
+ 
+ static DEVICE_ATTR_RW(smart_charge_delay);
+ 
++/*
++ * ec_raw: read-only diagnostic attribute exposing the raw 0x82 status byte and
++ * the three undocumented words already fetched by the driver: 0x98 and 0x9C
++ * (from the _BST status block) and 0xA0 (from the _BIX info block), without
++ * issuing extra EC transactions.
++ */
++static ssize_t ec_raw_show(struct device *dev, struct device_attribute *attr,
++			   char *buf)
++{
++	struct power_supply *psy = to_power_supply(dev);
++	struct gaokun_psy *ecbat = power_supply_get_drvdata(psy);
++
++	if (!gaokun_psy_bat_present(ecbat))
++		return -ENODEV;
++
++	gaokun_psy_get_bat_status(ecbat);
++
++	return sysfs_emit(buf, "status=0x%02x w98=0x%04x w9c=0x%04x wa0=0x%04x\n",
++			  ecbat->bat_status_raw,
++			  le16_to_cpu(ecbat->status.unknown1),
++			  le16_to_cpu(ecbat->status.temp_now),
++			  le16_to_cpu(ecbat->info.unknown3));
++}
++
++static DEVICE_ATTR_RO(ec_raw);
++
+ static struct attribute *gaokun_psy_features_attrs[] = {
+ 	&dev_attr_battery_adaptive_charge.attr,
+ 	&dev_attr_smart_charge_delay.attr,
++	&dev_attr_ec_raw.attr,
+ 	NULL,
+ };
+ ATTRIBUTE_GROUPS(gaokun_psy_features);
+@@ -568,6 +708,7 @@ static int gaokun_psy_notify(struct notifier_block *nb,
  	case EC_EVENT_BAT_A1:
  	case EC_EVENT_BAT_A3:
  		if (action == EC_EVENT_BAT_A3) {
@@ -22549,7 +22904,7 @@ index e4dfec3..6212b00 100644
  			gaokun_psy_get_bat_info(ecbat);
  			msleep(100);
  		}
-@@ -596,9 +605,15 @@ static int gaokun_psy_probe(struct auxiliary_device *adev,
+@@ -596,9 +737,15 @@ static int gaokun_psy_probe(struct auxiliary_device *adev,
  	ecbat->dev = dev;
  	ecbat->nb.notifier_call = gaokun_psy_notify;
  
@@ -22565,7 +22920,7 @@ index e4dfec3..6212b00 100644
  	ecbat->adp_psy = devm_power_supply_register(dev, &gaokun_psy_adp_desc,
  						    &psy_cfg);
  	if (IS_ERR(ecbat->adp_psy))
-@@ -607,7 +622,6 @@ static int gaokun_psy_probe(struct auxiliary_device *adev,
+@@ -607,7 +754,6 @@ static int gaokun_psy_probe(struct auxiliary_device *adev,
  
  	psy_cfg.supplied_to = (char **)&gaokun_psy_bat_desc.name;
  	psy_cfg.num_supplicants = 1;

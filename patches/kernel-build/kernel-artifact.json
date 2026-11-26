@@ -4,34 +4,48 @@
     "tree": "/home/cenmin/kbuild/linux-7.2.9-gk3",
     "version": "7.2.9",
     "branch": "master",
-    "head": "86450bb77176ba1ccf2aad21c4a8ac40894e1fc8",
-    "commit_count": 136,
-    "config_sha256": "900b5a5ef217ebe3483a6b44317de083a8ff00066265c50c36644e4453743786",
+    "head": "e36b3ae3466482f68f394a8939a6481b462e28dd",
+    "commit_count": 139,
+    "config_sha256": "4acb3aebe0e086140a5c8eb32e93eac0b58d687c68c29dfa98ab5f0e680e1170",
     "config_in_repo": "patches/kernel-build/kernel-config-7.2.9-gaokun3.txt",
     "base_commit": "2f6ee52d42deae4650756aaf740b1525f16b956e",
     "combined_patch": {
       "path": "patches/kernel-build/kernel-7.2.9-gaokun3-combined.patch",
-      "bytes": 874921,
-      "sha256": "d2bf4704023fe923f5a5965da035e39921420a4b634049d875fa6f569e60868a",
+      "bytes": 886435,
+      "sha256": "3c79e89b0da12acb8f46b7bac92ace79581378adee07cebf03c7b4978286bd42",
       "applies_to": "v7.2.9 基线（2f6ee52 提交）",
-      "verified": "已用 git worktree 检出基线 → git apply → 136/136 文件与当前树逐字节一致"
+      "verified": "已用 git worktree 检出基线 2f6ee52 → git apply → 139/139 文件与当前树逐字节一致（2026-11-27）"
     },
     "files_lock": {
       "path": "patches/kernel-build/kernel-files.lock.json",
-      "files": 136
+      "files": 139
     },
     "artifact": {
       "path": "/home/cenmin/kbuild/linux-7.2.9-gk3/arch/arm64/boot/vmlinuz.efi",
-      "bytes": 16134656,
-      "sha256": "db5a1aa10558e02781156ca24c42fc190caffb337e88d224526bfe79d8e8e57d",
-      "built_from_head": "86450bb77176ba1ccf2aad21c4a8ac40894e1fc8",
+      "bytes": 16179712,
+      "sha256": "188e5cec7455947ab370a6351e5e931b52afb7e56e4c65a3e172e0b14634ad08",
+      "built_from_head": "e36b3ae3466482f68f394a8939a6481b462e28dd",
       "build_cmd": "make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) vmlinuz.efi"
-    }
+    },
+    "ksu": {
+      "repo": "https://github.com/ReSukiSU/ReSukiSU",
+      "tag": "v4.1.0",
+      "local_commits_on_top": [
+        "2f24733a apk_sign: include linux/hex.h (bin2hex 在 7.2 拆到 hex.h)",
+        "6221352b throne_tracker: strncpy -> memcpy（定长拷贝语义不变）",
+        "7189026a throne_tracker: 第二处 strncpy -> strscpy"
+      ],
+      "note": "v4.1.0 + 3 条 7.2 适配提交；miuix 本地分支指向同一 HEAD 供 Kbuild 算版本号（40199+）；集成方式 drivers/kernelsu 软链 + Makefile/Kconfig 挂钩（树内提交 e36b3ae）"
+    },
+    "ported_patches": [
+      "2c2eb2a power: supply: huawei-gaokun-battery: 0x82 按位解码 + CAPACITY_LEVEL + 温度 0x9C + ec_raw（vahiru ec-usb/0001+0016 手工移植）",
+      "edbf32e efi-pstore: efivar ops 晚到时经通知链注册（vahiru core/0001 手工移植）；EFI_VARS_PSTORE_DEFAULT_DISABLE 已关"
+    ]
   },
   "esp": {
     "image": {
-      "bytes": 16134656,
-      "sha256": "db5a1aa10558e02781156ca24c42fc190caffb337e88d224526bfe79d8e8e57d",
+      "bytes": 16179712,
+      "sha256": "待上机验证后更新（新产物 188e5cec7455947a…）",
       "origin": "内核树 vmlinuz.efi（同 sha，已和 ESP 现场比对过）"
     },
     "dtb": {
