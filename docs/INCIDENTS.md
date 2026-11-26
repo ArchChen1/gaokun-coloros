@@ -59,6 +59,51 @@
   B. 绕开 oplus HAL，走标准 health HAL + SystemUI 适配（即 gk3-charge 补丁的方向，推荐）。
   尚未拍板；且验证充电行为必须物理插上充电器。
 
+### 5.1 采用 B 方案：改框架合成 notifyCode（不动 SystemUI，绕开签名）
+
+用户拍板走 B。进一步排查后，落点比「改 SystemUI」更靠前、也更干净：
+
+**为什么不改 SystemUI**：`/system_ext/priv-app/SystemUI/SystemUI.apk`（原版 sha `8b118f6f…`）
+是 v3 平台签名（`SignType: platform_sha256`，指纹 `E4980240…`），OPPO release-keys，
+仓库和 WSL 里都没有对应私钥。重签会丢 signature 级权限，不可行。
+`/home/cenmin/archive/gk3-charge-20261126/SystemUI.apk` 是当年**已打补丁的候选**，不是在跑的原版。
+
+**原版 SystemUI 的精确语义**（取自 jadx `--fallback` 字节码，普通反编译会把这段控制流还原错）：
+
+```
+isFull          = (status == 5) && !(notifyCode & 1024 || notifyCode & 2048)
+batteryCharging = plugged != 0 && !isFull && !(notifyCode & 2 || notifyCode & 32)
+```
+
+即 bit2 / bit32 是「不充电」标志位。`notifyCode = -1` 把所有位都置上，于是**插电也判定为不充电**。
+`notifyCode = 0` 才是「无故障」。
+
+**数据来源链**：`OplusBatteryService.getBroadcastDataFromHal()` →
+`mChargerInfoUpdateSupported == -1`（HAL 不可用）→ `getDataFromHalByOldInterface()` →
+`mBatteryNotifyCode = feature.getPsyBatteryNotify()`，而后者 `ensureConnect()` 失败即 `return -1`。
+`mPlugType` / `mBatteryStatus` 则来自标准 BatteryService（`processAdditionalValuesLocked`），**是准确的**。
+
+**补丁**（`build/patches/p_charger_notifycode.py`，改 `oplus-services.jar` 的 smali）：
+HAL 返回 -1 时用标准状态合成等价标志，HAL 可用时原样保留厂商值：
+
+| 实际状态 | 合成 notifyCode | SystemUI 结果 |
+| --- | --- | --- |
+| 未插电 | 0 | 不充电 |
+| 插电 + status 2（充电中） | 0 | 充电，显示闪电 |
+| 插电 + status 5（充满） | 0 | isFull，显示满电 |
+| 插电 + 其他 status（暂停充电） | 2 | 不充电 |
+
+jar 不走 APK 签名校验，因此不需要任何密钥。方法 `.locals 7 → 9`，用全新的 v7/v8，不碰原有寄存器。
+
+**已验证**：重建后 `classes.dex` 以 **STORED** 方式换回原 jar（普通 `zip` 会 deflate，
+ART 需要不压缩才能 mmap），`zipalign -c 4` 通过；jar 内**只有 classes.dex 变化**，其余条目逐字节保留；
+jadx fallback 复核字节码，分支与设计完全一致。产物 `work/charge/oplus-services-aligned.jar`
+（30,758,288 B，sha 见构建日志）。
+
+**待做**：把 jar 放进 system 树、清掉 `oat/arm64/oplus-services.{odex,vdex}` 旧产物、
+重打 system.erofs → 出增量包（只有 system 变）→ 刷写验证。
+**验证必须插上充电器**（当前 `gaokun-ec-adapter online=0`，设备在用电池）。
+
 ## 6. 开机 12 s 卡到 70 多秒
 
 - **根因**：`init.gaokun3.rc:141` 的 `write /sys/bus/pci/drivers/ath11k_pci/bind 0006:01:00.0` 是**同步**命令。
